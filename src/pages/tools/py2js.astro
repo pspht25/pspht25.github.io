@@ -329,6 +329,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
   function showJsOk(body: string, tMs: number) {
     jsHl.style.display = 'none';
+    jsHl.style.position = '';
+    jsHl.style.overflow = '';
     jsScroll.style.display = 'block';
     jsCode.innerHTML = hlJs(body) + '\n';
     elapsedEl.textContent = '转译 ' + tMs.toFixed(1) + ' ms';
@@ -375,9 +377,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
   function run() {
     const src = codeEl.value;
-    const r = lastJs !== null && src.length ? null : compile(src);
-    const js = r ? r.js : lastJs;
-    if (!js) return;
+    const r = compile(src);
+    if (!r) return;
     const t0 = performance.now();
     try {
       const res = new Function(RUNTIME + '\n' + js)() as { out: string };
