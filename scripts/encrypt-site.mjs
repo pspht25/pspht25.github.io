@@ -7,7 +7,7 @@ import { readdirSync, statSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative, extname } from 'node:path';
 import { pbkdf2Sync, createCipheriv, randomBytes } from 'node:crypto';
 
-const DIST = new URL('../dist', import.meta.url).pathname;
+const DIST = decodeURIComponent(new URL('../dist', import.meta.url).pathname);
 const PASS = process.env.SITE_PASS;
 const ITER = 120000;
 const REMEMBER_DAYS = 7;
