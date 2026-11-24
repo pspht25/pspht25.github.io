@@ -1,0 +1,726 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>噪声是怎样炼成的 · ISP 图像降噪演绎</title>
+<meta name="description" content="面向小白的交互科普：图像传感器噪声从哪来、SNR 怎么算、ISP 流水线中降噪的位置、经典滤波与 AI ISP 前沿全景。">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<style>
+:root{
+  color-scheme: light dark;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+}
+html[data-theme='light']{
+  --bg:#f6f8fb; --bg-soft:#eef2f7; --fg:#1f2937; --muted:#64748b;
+  --card:#ffffff; --border:#e3e9f0; --accent:#2563eb; --accent-soft:rgba(37,99,235,.1);
+  --warn:#dc2626; --ok:#16a34a; --amber:#d97706; --chip:#f1f5f9;
+}
+html[data-theme='dark']{
+  --bg:#0b1220; --bg-soft:#111b2e; --fg:#e2e8f0; --muted:#94a3b8;
+  --card:#16223a; --border:#24304a; --accent:#5ea2ff; --accent-soft:rgba(94,162,255,.14);
+  --warn:#f87171; --ok:#4ade80; --amber:#fbbf24; --chip:#1d2a44;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);background:var(--bg);color:var(--fg);line-height:1.75;font-size:16px}
+.wrap{max-width:860px;margin:0 auto;padding:0 20px}
+h1{font-size:2rem;margin:1.2rem 0 .4rem}
+h2{font-size:1.45rem;margin:0 0 .6rem;padding-top:.2rem}
+h3{font-size:1.08rem;margin:1.4rem 0 .4rem}
+p{margin:.6rem 0}
+.sub{color:var(--muted);font-size:.92rem}
+.hero{padding:2.6rem 0 1.4rem;border-bottom:1px dashed var(--border)}
+.hero .emoji{font-size:2.6rem}
+.badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.badge{font-size:.75rem;padding:3px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
+nav.tocbar{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);overflow-x:auto;white-space:nowrap}
+nav.tocbar .in{display:flex;gap:4px;max-width:860px;margin:0 auto;padding:8px 12px}
+nav.tocbar a{color:var(--muted);text-decoration:none;font-size:.82rem;padding:4px 10px;border-radius:999px}
+nav.tocbar a:hover,nav.tocbar a.on{background:var(--accent-soft);color:var(--accent)}
+section{padding:2.2rem 0 1rem;border-bottom:1px dashed var(--border)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin:14px 0;box-shadow:0 1px 3px rgba(15,23,42,.06)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+@media(max-width:700px){.grid2,.grid3{grid-template-columns:1fr}}
+.tag{display:inline-block;font-size:.72rem;color:var(--muted);background:var(--chip);border-radius:6px;padding:2px 8px;margin-right:6px}
+.formula{font-size:1.05rem;padding:10px 14px;background:var(--bg-soft);border-radius:10px;overflow-x:auto;margin:10px 0}
+.katex-display{margin:.4em 0}
+.katex{font-size:1.02em}
+.fallback-sub{vertical-align:-.25em;font-size:.8em}
+.fallback-sup{vertical-align:.4em;font-size:.8em}
+label{display:block;font-size:.85rem;color:var(--muted);margin:10px 0 4px}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.val{font-family:var(--mono);color:var(--accent);font-weight:600}
+canvas.view{width:100%;image-rendering:pixelated;border-radius:10px;border:1px solid var(--border);display:block;background:#000}
+canvas.chart{width:100%;display:block}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+button{font-family:var(--font);font-size:.85rem;padding:7px 14px;border-radius:999px;border:1px solid var(--border);background:var(--card);color:var(--fg);cursor:pointer;transition:.15s}
+button:hover{border-color:var(--accent);color:var(--accent)}
+button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.readout{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+.ro{flex:1;min-width:110px;background:var(--bg-soft);border-radius:10px;padding:8px 12px;text-align:center}
+.ro .k{font-size:.72rem;color:var(--muted)}
+.ro .v{font-family:var(--mono);font-size:1.15rem;font-weight:700;color:var(--accent)}
+.ro .v.warn{color:var(--warn)} .ro .v.ok{color:var(--ok)} .ro .v.amber{color:var(--amber)}
+.note{font-size:.85rem;color:var(--muted)}
+.callout{border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:0 10px 10px 0;padding:10px 14px;margin:12px 0;font-size:.93rem}
+.warnbox{border-left-color:var(--warn)}
+.pipe{display:flex;gap:6px;overflow-x:auto;padding:14px 4px;align-items:stretch}
+.pstep{flex:0 0 auto;min-width:86px;text-align:center;font-size:.78rem;padding:9px 8px;border-radius:10px;border:1px solid var(--border);background:var(--card);cursor:pointer;position:relative;transition:.15s}
+.pstep:hover{border-color:var(--accent)}
+.pstep.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.pstep.denoise{border-color:var(--amber);border-width:2px}
+.pstep .ic{font-size:1.2rem;display:block}
+.parrow{align-self:center;color:var(--muted);font-size:.8rem;flex:0 0 auto}
+#pipeDesc{min-height:64px}
+.tl{position:relative;margin:18px 0 6px;padding-left:26px}
+.tl::before{content:'';position:absolute;left:9px;top:6px;bottom:6px;width:2px;background:var(--border)}
+.tl-item{position:relative;margin:0 0 16px}
+.tl-item::before{content:'';position:absolute;left:-24px;top:8px;width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.tl-item.hot::before{background:var(--amber);box-shadow:0 0 0 3px rgba(217,119,6,.18)}
+.tl-item .yr{font-family:var(--mono);font-weight:700;color:var(--accent);font-size:.9rem}
+.tl-item.hot .yr{color:var(--amber)}
+.tl-item p{margin:.15rem 0;font-size:.92rem}
+.quiz-opt{display:block;width:100%;text-align:left;margin:6px 0;padding:10px 14px;border-radius:10px}
+.quiz-opt.right{border-color:var(--ok);color:var(--ok)}
+.quiz-opt.wrong{border-color:var(--warn);color:var(--warn)}
+.refs{font-size:.82rem;color:var(--muted)}
+.refs li{margin:4px 0}
+footer{padding:2rem 0 3rem;text-align:center;color:var(--muted);font-size:.82rem}
+.to-top{position:fixed;right:18px;bottom:18px;border-radius:50%;width:42px;height:42px;font-size:1.1rem;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.hint{font-size:.78rem;color:var(--muted);font-style:italic}
+</style>
+</head>
+<body>
+<nav class="tocbar"><div class="in">
+  <a href="#s1">① 噪声从哪来</a><a href="#s2">② SNR 怎么算</a><a href="#s3">③ 流水线位置</a><a href="#s4">④ 经典降噪</a><a href="#s5">⑤ AI 前沿</a><a href="#s6">⑥ 测验</a><a href="#refs">参考</a>
+</div></nav>
+
+<div class="wrap">
+<header class="hero">
+  <span class="emoji">📷</span>
+  <h1>噪声是怎样炼成的</h1>
+  <p class="sub">ISP 图像降噪全景演绎 · 从传感器里的光子到 AI 降噪大模型</p>
+  <p class="sub">每个演示都在浏览器本地实时运行 · 公式用 KaTeX 渲染（离线自动回退为文本排版）</p>
+  <div class="badges">
+    <span class="badge">零依赖单文件</span><span class="badge">真实物理模拟</span><span class="badge">小白友好</span><span class="badge">2025–2026 前沿</span>
+  </div>
+</header>
+
+<!-- ============ ① 噪声从哪来 ============ -->
+<section id="s1">
+  <h2>① 噪声从哪来：三种"捣乱分子"</h2>
+  <p>你手机里那张夜景照片上的"颗粒感"，不是相机坏了，而是<b>光的量子本性 + 电子学缺陷</b>共同作用的结果。所有图像噪声，几乎都能归到这三类：</p>
+  <div class="grid3">
+    <div class="card"><h3>🌰 散粒噪声</h3><p class="sub">Shot Noise</p><p>光子到达传感器像<b>下雨滴在伞面</b>——宏观均匀，微观随机（泊松过程）。光子数 <i>S</i> 的涨落是 <span class="formula" data-tex="\sigma_{\rm shot}=\sqrt{S}"><span class="fallback-sub">σ</span><sub class="fallback-sub">shot</sub> = √S</span>。光越少，√S 占比越大——这就是暗光噪点多的根源，<b>物理规律，无解</b>。</p></div>
+    <div class="card"><h3>⚡ 读出噪声</h3><p class="sub">Read Noise</p><p>信号从传感器读出、放大、模数转换过程中混入的电子学噪声，近似高斯分布。传感器工艺越好越小；曝光越短、像素越小，它的相对存在感越强。</p></div>
+    <div class="card"><h3>🧱 固定模式噪声</h3><p class="sub">FPN / 暗电流</p><p>每个像素的"体质"不同：暗电流、响应差异让画面出现<b>固定位置的斑点或竖条纹</b>。长时间曝光（如天文摄影）最明显，发热会加剧。</p></div>
+  </div>
+  <div class="callout">一句话：<b>散粒噪声是光的随机性</b>（躲不掉），<b>读出噪声是电路的缺陷</b>（工艺可压缩），<b>固定模式噪声是像素的差异</b>（可标定扣除）。下面亲手"造"一次噪声👇</div>
+
+  <div class="card">
+    <h3>🧪 传感器模拟器：亲手制造噪点</h3>
+    <p class="note">左边是理想画面（无噪声），右边是在同样的光线下，模拟光子散粒噪声 + 读出噪声后传感器真正记录到的画面。拖动滑块感受一下。</p>
+    <label>场景光照（光子预算）：<span class="val" id="vLux">1000</span> 等效单位 · 对应从正午到深夜</label>
+    <input type="range" id="rLux" min="0" max="100" value="72">
+    <label>ISO 感光度（放大器增益）：<span class="val" id="vIso">100</span></label>
+    <input type="range" id="rIso" min="0" max="100" value="35">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
+      <div><canvas class="view" id="cvIdeal" width="256" height="160"></canvas><p class="hint" style="text-align:center">理想画面（光子场）</p></div>
+      <div><canvas class="view" id="cvNoisy" width="256" height="160"></canvas><p class="hint" style="text-align:center">传感器实际记录</p></div>
+    </div>
+    <div class="readout">
+      <div class="ro"><div class="k">信噪比 SNR</div><div class="v" id="roSnr">—</div></div>
+      <div class="ro"><div class="k">散粒噪声 σ=√S</div><div class="v" id="roShot">—</div></div>
+      <div class="ro"><div class="k">读出噪声 σ</div><div class="v" id="roRead">—</div></div>
+      <div class="ro"><div class="k">观感评价</div><div class="v" id="roJudge">—</div></div>
+    </div>
+    <p class="note" id="simNote">💡 提示：把光照拖到很低，再对比"ISO 低 vs ISO 高"——ISO 把画面提亮了，但噪点也同步放大了。放大器<b>不能改善信噪比</b>，它只是把"暗的"放大成"亮的（但脏的）"。</p>
+  </div>
+</section>
+
+<!-- ============ ② SNR 怎么算 ============ -->
+<section id="s2">
+  <h2>② SNR 怎么算：一个"对数"统治一切</h2>
+  <p>衡量"干净 vs 脏"的标准叫<b>信噪比（SNR）</b>，单位分贝（dB）。注意它是个<b>对数</b>：信号每翻一倍只涨 6dB（功率口径 3dB），而 dB 从 0 到 60，跨着<b>一百万倍</b>的能量差距。</p>
+  <div class="formula" data-tex="\mathrm{SNR} = 20\,\log_{10}\!\left(\frac{S}{\sigma_N}\right)\ \text{dB}" style="text-align:center">
+    SNR = 20 · log<sub class="fallback-sub">10</sub> ( S / σ<sub class="fallback-sub">N</sub> ) dB
+  </div>
+  <p>在只有散粒噪声的理想世界（读出噪声为零），把 <span class="formula" data-tex="\sigma_{\rm shot}=\sqrt{S}"><span class="fallback-sub">σ</span><sub class="fallback-sub">shot</sub> = √S</span> 代入，得到一个极简而深刻的结论：</p>
+  <div class="formula" data-tex="\mathrm{SNR}_{\rm shot} = 10\,\log_{10}(S)\ \text{dB}" style="text-align:center">
+    SNR(散粒极限) = 10 · log<sub class="fallback-sub">10</sub>(S) dB　（S = 收到的光子数）
+  </div>
+  <div class="card">
+    <h3>📏 拖一下：光子数 → SNR 对数曲线</h3>
+    <label>单个像素收到的光子数 S：<span class="val" id="vPh">100</span> 个</label>
+    <input type="range" id="rPh" min="0" max="100" value="40">
+    <canvas class="chart" id="cvSnr" height="180"></canvas>
+    <div class="readout">
+      <div class="ro"><div class="k">SNR（散粒极限）</div><div class="v" id="roSnr2">—</div></div>
+      <div class="ro"><div class="k">噪声占信号比例</div><div class="v" id="roRatio">—</div></div>
+    </div>
+    <p class="note">拐点规律：<b>光子数 ×4，SNR 才 +6dB</b>（对数压缩）。暗光下想把 SNR 从 20dB 提到 40dB，需要 <b>×100 倍的光</b>——指望传感器"硬吃"不现实，所以才需要下面的一切：多帧、算法、AI。</p>
+  </div>
+  <div class="grid2">
+    <div class="card"><h3>🎚️ 动态范围与满阱</h3><p>每个像素像一只<b>小水桶</b>：能装的光电子有上限（满阱容量 FWC）。从"读出噪声地板"到"满阱"之间能分辨的亮度跨度就是<b>动态范围（DR）</b>，单位也是 dB。大底 + 大像素 = 大水桶 = 高 DR，这就是"底大一级压死人"的物理出处。</p></div>
+    <div class="card"><h3>🔍 ISO 的真相</h3><p>ISO 不是"感光度"，而是<b>放大器旋钮</b>。信号和噪声一起被放大，SNR 几乎不变——这就是"ISO 不变性"（ISO-less）。高 ISO 的意义只是让画面<b>能被看见</b>；真正决定画质的，始终是<b>落进桶里的光子数</b>。</p></div>
+  </div>
+</section>
+<!-- ============ ③ 流水线 ============ -->
+<section id="s3">
+  <h2>③ ISP 流水线：降噪在"工厂"的哪一站？</h2>
+  <p>从传感器原始数据到一张能看的照片，中间有一条<b>图像信号处理（ISP）流水线</b>。降噪不是单独一步魔法，而是嵌在流水线里的关键工位。点击下面的工位看它做什么（橙色边框的两个工位都与降噪有关）：</p>
+  <div class="card">
+    <div class="pipe" id="pipe">
+      <div class="pstep" data-i="0"><span class="ic">📷</span>RAW 原始数据</div><span class="parrow">→</span>
+      <div class="pstep" data-i="1"><span class="ic">⬛</span>黑电平校正</div><span class="parrow">→</span>
+      <div class="pstep" data-i="2"><span class="ic">🩹</span>坏点修复</div><span class="parrow">→</span>
+      <div class="pstep" data-i="3"><span class="ic">🌡️</span>镜头阴影校正</div><span class="parrow">→</span>
+      <div class="pstep denoise" data-i="4"><span class="ic">🧹</span>RAW 域降噪</div><span class="parrow">→</span>
+      <div class="pstep" data-i="5"><span class="ic">🎨</span>去马赛克</div><span class="parrow">→</span>
+      <div class="pstep" data-i="6"><span class="ic">🌈</span>色彩校正</div><span class="parrow">→</span>
+      <div class="pstep" data-i="7"><span class="ic">🎞️</span>Gamma</div><span class="parrow">→</span>
+      <div class="pstep denoise" data-i="8"><span class="ic">🧼</span>YUV 域降噪</div><span class="parrow">→</span>
+      <div class="pstep" data-i="9"><span class="ic">🔪</span>锐化</div><span class="parrow">→</span>
+      <div class="pstep" data-i="10"><span class="ic">💾</span>编码输出</div>
+    </div>
+    <div class="callout" id="pipeDesc"><b>💡 点击上方任意工位</b>，这里会显示它的职责，以及它和降噪的关系。</div>
+  </div>
+  <div class="grid2">
+    <div class="card"><h3>RAW 域降噪 <span class="tag">高端标配</span></h3><p>在<b>线性域</b>干活：噪声模型最简单（泊松 + 高斯，参数可从 ISO/曝光推算），信息最完整（还没去马赛克、没做 Gamma）。代价：要面对 Bayer 单通道结构和巨大算力。<b>手机夜景的多帧合成几乎都在 RAW 域完成</b>。</p></div>
+    <div class="card"><h3>YUV 域降噪 <span class="tag">性价比之选</span></h3><p>在<b>显示域</b>干活：亮度（Y）与色度（UV）分离，可对人眼不敏感的色度猛降噪声、对亮度温柔处理，算力友好。但此时信号已经过 Gamma 拉伸，噪声形态被"揉"过，建模更难。中低端机型主战场。</p></div>
+  </div>
+  <div class="callout">行业趋势：降噪工位正在<b>整体前移</b>——2025 年后旗舰方案（Arm SME2、苹果 DarkDiff、荣耀 AI 超感光）都选择在 RAW 或线性 RGB 阶段就上 AI 模型，因为"在噪声最纯粹的地方处理噪声"最有效。</div>
+</section>
+
+<!-- ============ ④ 经典降噪 ============ -->
+<section id="s4">
+  <h2>④ 经典降噪三板斧</h2>
+  <h3>第一斧：时域多帧叠加 —— 夜景模式的原理</h3>
+  <p>单帧光子不够？那就<b>多拍几帧求平均</b>。噪声是随机的（有正有负），多帧平均后噪声互相抵消，信号保持不变：</p>
+  <div class="formula" data-tex="\mathrm{SNR}_{N\ \text{帧}} = \sqrt{N}\times \mathrm{SNR}_{1\ \text{帧}}\quad\text{即每翻一倍}\ +3\,\text{dB}" style="text-align:center">
+    SNR(N帧) = √N × SNR(单帧)　→　帧数每翻一倍，SNR +3dB
+  </div>
+  <div class="card">
+    <h3>🧪 实测：16 帧叠加 = 4 倍信噪比</h3>
+    <p class="note">按当前光照设置独立生成 N 帧噪声画面并真实求平均（不是骗人的动画）。建议先把光照调暗再回来体验。</p>
+    <div class="btns" id="frameBtns">
+      <button data-n="1" class="on">1 帧</button><button data-n="2">2 帧</button><button data-n="4">4 帧</button><button data-n="8">8 帧</button><button data-n="16">16 帧</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><canvas class="view" id="cvF1" width="256" height="160"></canvas><p class="hint" style="text-align:center">单帧</p></div>
+      <div><canvas class="view" id="cvFN" width="256" height="160"></canvas><p class="hint" style="text-align:center">N 帧平均</p></div>
+    </div>
+    <div class="readout">
+      <div class="ro"><div class="k">单帧 SNR</div><div class="v" id="roSnrF1">—</div></div>
+      <div class="ro"><div class="k">N 帧 SNR</div><div class="v" id="roSnrFN">—</div></div>
+      <div class="ro"><div class="k">实测增益</div><div class="v" id="roGain">—</div></div>
+      <div class="ro"><div class="k">理论增益</div><div class="v" id="roGainT">—</div></div>
+    </div>
+    <div class="callout">你的手机"夜景模式"按快门那几秒，正是干这件事的<b>豪华版</b>：连拍十几帧 RAW → 挑选/加权 → 运动区域防鬼影对齐 → 平均 + AI 精修。多一帧就多一分干净，这就是"手别抖，多等两秒"的价值。</div>
+  </div>
+
+  <h3>第二斧：单帧空域滤波 —— 和噪声做"邻域斗争"</h3>
+  <p>只有一帧时，只能利用<b>空间上的信息</b>：噪声是高频随机抖动，把它滤掉——但图像细节（边缘、纹理）也是高频，这是一场<b>永久的取舍</b>。亲手试试三种经典滤波器：</p>
+  <div class="card">
+    <h3>🧪 滤波器对比（对上面的噪声画面实时卷积）</h3>
+    <div class="btns" id="filtBtns">
+      <button data-f="raw" class="on">原始噪声图</button><button data-f="gauss">高斯模糊</button><button data-f="median">中值滤波</button><button data-f="bilateral">双边滤波</button>
+    </div>
+    <canvas class="view" id="cvFilt" width="256" height="160"></canvas>
+    <p class="note" id="filtDesc">👆 点击按钮切换滤波方式。建议先把光照调暗、生成明显噪点后体验。</p>
+  </div>
+  <div class="grid3">
+    <div class="card"><h3>☁️ 高斯模糊</h3><p>对邻居一视同仁地平均。<b>噪声降了，边缘也糊了</b>——简单粗暴，只配当"背景板"。</p></div>
+    <div class="card"><h3>🔢 中值滤波</h3><p>取邻域<b>中位数</b>而非平均：对"椒盐"离群噪点效果极好，边缘比高斯保得住，但细节纹理照样受伤。</p></div>
+    <div class="card"><h3>⚖️ 双边滤波 <span class="tag">1998</span></h3><p>高斯的升级：平均时<b>亮度差太大就不参团</b>（保边）。<span class="formula" data-tex="w\propto e^{-\Delta x^2/2\sigma_s^2}\cdot e^{-\Delta I^2/2\sigma_r^2}"><span class="fallback-sub">w</span> ∝ e^(−Δx²/2σ<sub class="fallback-sub">s</sub>²) · e^(−ΔI²/2σ<sub class="fallback-sub">r</sub>²)</span>——空间近 + 亮度近才加权。保边降噪的开山鼻祖。</p></div>
+  </div>
+  <div class="grid2">
+    <div class="card"><h3>🌐 非局部均值 NLM <span class="tag">2005</span></h3><p>革命性想法：在<b>全图</b>找长得像的小块互帮平均（"天空的每一块都是我的队友"），降噪强度质变，但算力爆炸。</p></div>
+    <div class="card"><h3>🏆 BM3D <span class="tag">2007 · 传统算法之王</span></h3><p>把 NLM 的"相似块组队"升级为<b>3D 变换域收缩</b>：组块 → 三维小波变换 → 硬阈值+维纳滤波两阶段。至今仍是许多论文的"必须打败的对手"。</p></div>
+  </div>
+</section>
+<!-- ============ ⑤ AI 前沿 ============ -->
+<section id="s5">
+  <h2>⑤ 前沿降噪：AI 进驻 ISP 流水线</h2>
+  <p>传统算法在"数学规则"里打转，深度学习则<b>从海量成对数据（噪声图 → 干净图）里学规则</b>。降噪能力开始吃"数据红利"，并和手机芯片深度绑定。</p>
+  <div class="tl">
+    <div class="tl-item"><span class="yr">1998</span><p><b>双边滤波</b>问世，"保边降噪"思想开山。</p></div>
+    <div class="tl-item"><span class="yr">2005</span><p><b>NLM 非局部均值</b>：全图找相似块互帮，降噪质变。</p></div>
+    <div class="tl-item"><span class="yr">2007</span><p><b>BM3D</b>：块匹配 + 3D 变换收缩，传统算法封神之作。</p></div>
+    <div class="tl-item"><span class="yr">2017</span><p><b>DnCNN</b>：残差卷积网络降噪，深度学习时代开幕。</p></div>
+    <div class="tl-item"><span class="yr">2018</span><p><b>KPN</b> 多帧核预测 + <b>Learning to See in the Dark</b>（极暗 RAW 端到端成像），手机夜景算法的理论地基。</p></div>
+    <div class="tl-item"><span class="yr">2020–22</span><p><b>MIRNet / NAFNet / Restormer</b>：多任务高效架构成熟，AI 降噪成为旗舰 ISP 标配。</p></div>
+    <div class="tl-item"><span class="yr">2024</span><p><b>QRNet</b>（IEEE TIP）：双曝光 Quad-Bayer 传感器上联合降噪 + 去模糊。</p></div>
+    <div class="tl-item hot"><span class="yr">2025</span><p><b>Arm SME2</b>：在 CPU 上跑神经相机降噪（RAW 域，UltraLite 时域 + CollapseNet 空域组合），旗舰手机落地——AI 降噪不再专属 NPU。</p></div>
+    <div class="tl-item hot"><span class="yr">2025</span><p><b>YOND</b>：盲 RAW 降噪，只用合成数据训练就能泛化到<b>没见过的相机</b>，摆脱"一机一训"。</p></div>
+    <div class="tl-item hot"><span class="yr">2025</span><p><b>苹果 DarkDiff</b>（与普渡大学）：把预训练<b>扩散模型</b>重新"指派"进相机 ISP，在 RAW/线性 RGB 阶段给极暗照片生成真实纹理，用局部注意力机制防止 AI"幻觉"，效果对比 300 倍长曝光参考图。</p></div>
+    <div class="tl-item hot"><span class="yr">2026</span><p><b>骁龙第五代 8 至尊版</b>：20-bit 三 ISP + NPU 直连，4K60 暗光视频内容感知降噪；<b>荣耀 AI 超感光</b>：NPU 逐像素分类噪声类型（光子/读出/固定模式）分而治之，官方口径 SNR +8dB、全链路 &lt;5ms。</p></div>
+  </div>
+  <div class="grid3">
+    <div class="card"><h3>🚄 回归网络派</h3><p><span class="tag">DnCNN → NAFNet</span>快、稳、省电，是手机端主力。但用逐像素平均误差训练，极暗光下倾向输出"平均值"——<b>细节被抹平的"油画感"</b>由此而来。</p></div>
+    <div class="card"><h3>🎞️ 多帧融合派</h3><p><span class="tag">KPN / RAW 融合</span>把"多帧 √N 红利"和学习滤波结合：光流对齐、运动加权、逐像素自适应融合。夜景模式的幕后功臣。</p></div>
+    <div class="card"><h3>✨ 生成扩散派</h3><p><span class="tag">DarkDiff 2025</span>细节最强：理解"暗处该有什么纹理"并生成之。代价是算力巨大、需防幻觉篡改场景——离量产还有距离，但代表了下一代 ISP。</p></div>
+  </div>
+  <div class="card">
+    <h3>🧪 亲手调出"油画感"</h3>
+    <p class="note">拖动"降噪强度"（模拟双边滤波的亮度容差 σ<sub class="fallback-sub">r</sub> 越来越大），观察强降噪如何把噪声抹掉的同时<b>把细节也抹掉</b>——这就是过度平滑的"油画感"。</p>
+    <label>降噪强度 σ<sub class="fallback-sub">r</sub>：<span class="val" id="vOil">8</span></label>
+    <input type="range" id="rOil" min="0" max="100" value="10">
+    <canvas class="view" id="cvOil" width="256" height="160"></canvas>
+    <div class="readout">
+      <div class="ro"><div class="k">残留噪声估计</div><div class="v" id="roOilN">—</div></div>
+      <div class="ro"><div class="k">细节保留率</div><div class="v" id="roOilD">—</div></div>
+      <div class="ro"><div class="k">观感诊断</div><div class="v" id="roOilJ">—</div></div>
+    </div>
+    <p class="note">手机的"降噪强度"选项、相机的"长曝降噪"，都是在<b>噪点残留</b>与<b>细节损失</b>之间找平衡。AI 模型的核心价值，就是把这条取舍曲线整体往右上推。</p>
+  </div>
+  <div class="callout"><b>你的夜景照片背后：</b>按下快门 → 连拍多帧 RAW（吃 √N 红利）→ 逐帧运动对齐（防鬼影）→ RAW 域融合 → AI 网络降噪 + 细节重建 → 语义识别分区处理（天空平滑、人脸保细节）→ 输出。每一个环节，都是本文一个章节的现实版。</div>
+</section>
+
+<!-- ============ ⑥ 测验 ============ -->
+<section id="s6">
+  <h2>⑥ 三道题验收</h2>
+  <div class="card">
+    <p><b>Q1</b> · 一个像素收到的光子数从 100 涨到 10000（×100），散粒极限 SNR 提升多少？</p>
+    <div class="btns quiz" data-a="B">
+      <button class="quiz-opt" data-k="A">+6 dB</button><button class="quiz-opt" data-k="B">+20 dB</button><button class="quiz-opt" data-k="C">+100 dB</button>
+    </div>
+    <p class="note" data-exp="对：SNR=10log₁₀(S)，×100 → +20dB。这就是为什么暗光画质提升这么难——对数刻度下，'多给 100 倍光'才换 20dB。"></p>
+  </div>
+  <div class="card">
+    <p><b>Q2</b> · 夜景模式连拍 16 帧求平均，理论 SNR 提升多少？</p>
+    <div class="btns quiz" data-a="C">
+      <button class="quiz-opt" data-k="A">16 倍（+24dB）</button><button class="quiz-opt" data-k="B">+16dB</button><button class="quiz-opt" data-k="C">4 倍（+12dB）</button>
+    </div>
+    <p class="note" data-exp="对：噪声按 √N 缩小，16 帧 → 4 倍 → +12dB。帧数收益是对数的，多帧之外还要靠算法与 AI。"></p>
+  </div>
+  <div class="card">
+    <p><b>Q3</b> · 极暗光照片的"油画感"主要来自什么？</p>
+    <div class="btns quiz" data-a="A">
+      <button class="quiz-opt" data-k="A">降噪算法的过度平滑</button><button class="quiz-opt" data-k="B">ISO 调得太高</button><button class="quiz-opt" data-k="C">JPEG 压缩</button>
+    </div>
+    <p class="note" data-exp="对：回归式降噪以逐像素平均误差为目标，极暗光下输出趋向'局部平均'，高频细节被抹掉。生成式模型（如 DarkDiff）正是冲着解决它来的。"></p>
+  </div>
+</section>
+
+<!-- ============ 参考 ============ -->
+<section id="refs">
+  <h2>参考与来源</h2>
+  <ul class="refs">
+    <li>Arm — <i>Smarter Smartphone Photography: Neural Camera Denoising with SME2</i>（Edge AI &amp; Vision Alliance, 2025-11）</li>
+    <li>9to5Mac — <i>Apple &amp; Purdue: DarkDiff, retasking diffusion models for camera ISP</i>（2025-12）</li>
+    <li>YOND: Practical Blind Raw Image Denoising（<a href="https://arxiv.org/abs/2506.03645" target="_blank" rel="noopener">arXiv 2506.03645</a>, 2025-06）</li>
+    <li>QRNet: Joint Denoising and Deblurring on Dual-Exposure Quad-Bayer（IEEE TIP, <a href="https://arxiv.org/abs/2412.07256" target="_blank" rel="noopener">arXiv 2412.07256</a>, 2024-12）</li>
+    <li>第五代骁龙 8 至尊版 20-bit ISP 与 AI 影像（公开报道, 2026-04）；荣耀 AI 超感光计算架构白皮书解读（2026-06）</li>
+    <li>经典文献：Bilateral Filtering（Tomasi &amp; Manduchi, ICCV 1998）；NLM（Buades et al., CVPR 2005）；BM3D（Dabov et al., TIP 2007）；DnCNN（Zhang et al., TIP 2017）；Learning to See in the Dark（Chen et al., CVPR 2018）</li>
+    <li>诚实声明：本页模拟器为教学简化模型（泊松分布以正态近似、忽略固定模式噪声与色彩串扰、增益模型简化），但 √S 散粒极限、√N 多帧收益、ISO 不变性等<b>定量规律与真实传感器一致</b>。</li>
+  </ul>
+</section>
+
+<footer>噪声是怎样炼成的 · 心屿演示集 · 本页为自包含单文件，可在「⬇️ 下载单文件」后离线打开（公式渲染需联网）</footer>
+<button class="to-top" id="toTop" title="回到顶部">↑</button>
+</div>
+
+<script>
+/* ===== 主题同步（跟随博客切换）===== */
+(function(){
+  const t = localStorage.getItem('theme') ??
+    (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.documentElement.dataset.theme = t;
+  addEventListener('storage', e => {
+    if (e.key === 'theme' && e.newValue) document.documentElement.dataset.theme = e.newValue;
+  });
+})();
+/* ===== KaTeX 渲染（CDN 失败则保留 HTML 兜底公式）===== */
+window.addEventListener('load', () => {
+  if (!window.katex) return;
+  document.querySelectorAll('[data-tex]').forEach(el => {
+    try { katex.render(el.dataset.tex, el, { throwOnError: false }); } catch (e) {}
+  });
+});
+/* ===== 数学工具 ===== */
+let spare = null;
+function gauss(){ // Box-Muller
+  if (spare !== null) { const v = spare; spare = null; return v; }
+  let u = 0, v = 0; while (u === 0) u = Math.random(); v = Math.random();
+  const r = Math.sqrt(-2 * Math.log(u)), a = 2 * Math.PI * v;
+  spare = r * Math.sin(a); return r * Math.cos(a);
+}
+function poisson(lam){ // λ>30 用正态近似，小 λ 用精确采样
+  if (lam <= 0) return 0;
+  if (lam > 30) return Math.max(0, lam + Math.sqrt(lam) * gauss());
+  const L = Math.exp(-lam); let k = 0, p = 1;
+  do { k++; p *= Math.random(); } while (p > L);
+  return k - 1;
+}
+/* ===== 场景合成：夜景城市 ===== */
+const W = 256, H = 160, N = W * H;
+const scene = new Float32Array(N); // 0..1 理想亮度（灰度近似，带色彩）
+const sceneRGB = new Float32Array(N * 3);
+(function buildScene(){
+  const oc = document.createElement('canvas'); oc.width = W; oc.height = H;
+  const c = oc.getContext('2d');
+  const g = c.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#0a1230'); g.addColorStop(.62, '#1b2a4a'); g.addColorStop(1, '#2a3858');
+  c.fillStyle = g; c.fillRect(0, 0, W, H);
+  for (let i = 0; i < 70; i++) { // 星星
+    const x = Math.random() * W, y = Math.random() * H * .5, b = .3 + Math.random() * .7;
+    c.fillStyle = `rgba(255,255,235,${b * .8})`; c.fillRect(x, y, 1, 1);
+  }
+  const mg = c.createRadialGradient(206, 34, 4, 206, 34, 30); // 月亮
+  mg.addColorStop(0, 'rgba(255,250,220,1)'); mg.addColorStop(.35, 'rgba(255,250,220,.9)');
+  mg.addColorStop(.55, 'rgba(255,248,200,.16)'); mg.addColorStop(1, 'rgba(255,248,200,0)');
+  c.fillStyle = mg; c.beginPath(); c.arc(206, 34, 30, 0, 7); c.fill();
+  c.fillStyle = '#0a0f1e'; // 楼群剪影
+  const blocks = [[0,108,42,52],[46,88,34,72],[84,118,30,42],[118,78,44,82],[166,102,36,58],[206,92,50,68]];
+  for (const [x, y, w, h] of blocks) c.fillRect(x, y, w, h);
+  const lamp = (x, y, r, col) => { const lg = c.createRadialGradient(x, y, 1, x, y, r);
+    lg.addColorStop(0, col); lg.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = lg; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); };
+  lamp(30, 96, 13, 'rgba(255,214,140,.85)'); lamp(140, 88, 15, 'rgba(255,220,150,.9)');
+  lamp(224, 100, 14, 'rgba(255,214,140,.8)'); lamp(64, 92, 9, 'rgba(180,210,255,.7)');
+  const win = (x, y) => { c.fillStyle = Math.random() > .4 ? 'rgba(255,205,120,.95)' : 'rgba(170,200,255,.8)'; c.fillRect(x, y, 2, 3); };
+  for (const [bx, by, bw, bh] of blocks) for (let i = 0; i < 10; i++)
+    if (Math.random() > .45) win(bx + 4 + Math.floor(Math.random() * (bw - 5)), by + 6 + Math.floor(Math.random() * (bh - 12)));
+  const img = c.getImageData(0, 0, W, H).data;
+  for (let i = 0; i < N; i++) {
+    sceneRGB[i*3] = img[i*4] / 255; sceneRGB[i*3+1] = img[i*4+1] / 255; sceneRGB[i*3+2] = img[i*4+2] / 255;
+    scene[i] = (0.2126*img[i*4] + 0.7152*img[i*4+1] + 0.0722*img[i*4+2]) / 255;
+  }
+})();
+/* ===== 传感器噪声引擎 ===== */
+// lux 滑块 0-100 → 满亮度像素光子数 2^(s/100*15-3)：100→4096(36dB) 50→23(14dB)
+const lux2phot = s => Math.pow(2, s / 100 * 15 - 3);
+const iso2gain = s => Math.pow(10, s / 100 * 2 - 0.3); // 0→0.5, 50→3.16, 100→6.3
+const SIGMA_READ = 4, K_EXPO = 1400; // 读出噪声(电子) / 曝光归一常数
+function capture(sceneLum, nphot, gain, frameSeed) {
+  // 返回 8bit ImageData + 噪声统计；frameSeed 用于多帧独立噪声（通过 Math.random 天然独立）
+  const buf = new Float32Array(N * 3);
+  let sumSig = 0, cnt = 0;
+  for (let i = 0; i < N; i++) {
+    for (let ch = 0; ch < 3; ch++) {
+      const S = Math.max(0.05, sceneLum[i] * (sceneRGB[i*3+ch] / Math.max(.15, sceneLum[i])) ) * nphot; // 通道能量按场景色分配
+      const Sc = sceneRGB[i*3+ch] * nphot; // 简化：通道光子数 = 场景色 × 光子预算
+      const shot = poisson(Sc) - Sc;
+      const read = gauss() * SIGMA_READ;
+      buf[i*3+ch] = Math.max(0, Math.min(255, (Sc + shot + read) * gain / K_EXPO * 255));
+    }
+    if (sceneLum[i] > .55) { sumSig += sceneLum[i]; cnt++; }
+  }
+  return { buf, brightMean: cnt ? sumSig / cnt : 0 };
+}
+function bufToImage(buf){ const id = new ImageData(W, H);
+  for (let i = 0; i < N * 3; i++) id.data[i + ((i / 3) | 0)] = 0; // noop 防 JIT 误优化
+  for (let i = 0; i < N; i++) { const p = i * 4;
+    id.data[p] = buf[i*3]; id.data[p+1] = buf[i*3+1]; id.data[p+2] = buf[i*3+2]; id.data[p+3] = 255; }
+  return id; }
+function patchStats(buf){ // 亮区：mean 与噪声 std（相对理想场景）
+  let ds = 0, ds2 = 0, ss = 0, n = 0;
+  for (let i = 0; i < N; i++) {
+    if (scene[i] < .5) continue;
+    const nl = 0.2126*buf[i*3] + 0.7152*buf[i*3+1] + 0.0722*buf[i*3+2];
+    const sl = scene[i] * 255 * (0.2126*sceneRGB[i*3] + 0.7152*sceneRGB[i*3+1] + 0.0722*sceneRGB[i*3+2]) / Math.max(.15, scene[i]) / 255;
+    const ideal = scene[i] * 255 * K_EXPO / K_EXPO; // 理想亮度（同增益域不好对齐）→ 改用 noisy 亮区信噪估计
+    const idealLum = 255 * Math.min(1, scene[i]); // 场景亮度 0-255
+    ds += (nl - idealLum); ds2 += (nl - idealLum) * (nl - idealLum); ss += idealLum; n++;
+  }
+  const bias = ds / n, sd = Math.sqrt(Math.max(1e-6, ds2 / n - bias * bias));
+  return { mean: ss / n, sd };
+}
+</script>
+<script>
+/* ===== 修正版核心工具（覆盖上方简化占位）===== */
+function bufToImage(buf){
+  const id = new ImageData(W, H);
+  for (let i = 0; i < N; i++) { const p = i * 4;
+    id.data[p] = buf[i*3]; id.data[p+1] = buf[i*3+1]; id.data[p+2] = buf[i*3+2]; id.data[p+3] = 255; }
+  return id;
+}
+function capture(rgb, nphot, gain){
+  // 泊松(散粒) + 高斯(读出) → 8bit；同时返回同增益域的理想值
+  const buf = new Float32Array(N * 3), ideal = new Float32Array(N * 3);
+  const k = gain / K_EXPO * 255;
+  for (let i = 0; i < N; i++) for (let ch = 0; ch < 3; ch++) {
+    const Sc = Math.max(0.02, rgb[i*3+ch]) * nphot;
+    const shot = poisson(Sc) - Sc, read = gauss() * SIGMA_READ;
+    ideal[i*3+ch] = Math.min(255, Sc * k);
+    buf[i*3+ch] = Math.max(0, Math.min(255, (Sc + shot + read) * k));
+  }
+  return { buf, ideal };
+}
+function patchStats(buf, ideal, mask){
+  let ds2 = 0, ms = 0, n = 0;
+  for (let i = 0; i < N; i++) {
+    if (!mask(i)) continue;
+    for (let ch = 0; ch < 3; ch++) {
+      const d = buf[i*3+ch] - ideal[i*3+ch];
+      ds2 += d * d; ms += ideal[i*3+ch]; n++;
+    }
+  }
+  const sd = Math.sqrt(Math.max(1e-6, ds2 / n));
+  return { mean: ms / n, sd };
+}
+/* ===== 交互绑定 ===== */
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const brightMask = i => scene[i] > .55;
+const cvIdeal = $('#cvIdeal'), cvNoisy = $('#cvNoisy');
+const ctxIdeal = cvIdeal.getContext('2d'), ctxNoisy = cvNoisy.getContext('2d');
+let curIdeal = null, curNoise1 = null, frames = null, framesNphot = 0;
+
+function judgeSnr(snr){
+  if (snr >= 32) return ['干净', 'ok'];
+  if (snr >= 24) return ['轻度噪点', 'amber'];
+  return ['噪点明显', 'warn'];
+}
+function put(ctx, id){ ctx.putImageData(id, 0, 0); }
+
+/* —— 模拟器 —— */
+function renderSim(){
+  const nphot = lux2phot(+$('#rLux').value), gain = iso2gain(+$('#rIso').value);
+  const { buf, ideal } = capture(sceneRGB, nphot, gain);
+  curIdeal = ideal; curNoise1 = buf.slice();
+  put(ctxIdeal, bufToImage(ideal)); put(ctxNoisy, bufToImage(buf));
+  const st = patchStats(buf, ideal, brightMask);
+  const snr = 20 * Math.log10(st.mean / st.sd);
+  $('#roSnr').textContent = snr.toFixed(1) + ' dB';
+  const jc = judgeSnr(snr); const j = $('#roJudge'); j.textContent = jc[0]; j.className = 'v ' + jc[1];
+  $('#roShot').textContent = '√' + Math.round(nphot * .7) + ' ≈ ' + Math.sqrt(nphot * .7).toFixed(1);
+  $('#roRead').textContent = SIGMA_READ + ' 电子';
+  $('#vLux').textContent = ['深夜', '室内', '阴天', '明亮', '正午'][Math.min(4, Math.floor(+$('#rLux').value / 22))];
+  $('#vIso').textContent = Math.round(iso2gain(+$('#rIso').value) * 100) + '% 增益';
+  drawSnrChart(); renderFilter(); renderOil();
+}
+$('#rLux').addEventListener('input', renderSim);
+$('#rIso').addEventListener('input', renderSim);
+
+/* —— SNR 对数曲线 —— */
+function drawSnrChart(){
+  const cv = $('#cvSnr'), dpr = devicePixelRatio || 1;
+  const w = cv.clientWidth || 600, h = 180;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const c = cv.getContext('2d'); c.scale(dpr, dpr);
+  const dark = document.documentElement.dataset.theme === 'dark';
+  const axc = dark ? '#94a3b8' : '#64748b', grc = dark ? '#24304a' : '#e3e9f0';
+  const X = L => 34 + (L / 4) * (w - 50), Y = s => h - 24 - (s / 40) * (h - 40);
+  c.strokeStyle = grc; c.lineWidth = 1;
+  for (let s = 0; s <= 40; s += 10) { c.beginPath(); c.moveTo(X(0), Y(s)); c.lineTo(X(4), Y(s)); c.stroke();
+    c.fillStyle = axc; c.font = '10px sans-serif'; c.fillText(s + 'dB', 4, Y(s) + 3); }
+  for (let L = 0; L <= 4; L += 1) { c.beginPath(); c.moveTo(X(L), Y(0)); c.lineTo(X(L), Y(40)); c.stroke();
+    c.fillText('10^' + L, X(L) - 10, h - 8); }
+  c.strokeStyle = '#16a34a'; c.lineWidth = 2.5; c.beginPath();
+  for (let L = 0; L <= 4; L += .05) { const x = X(L), y = Y(10 * L);
+    L === 0 ? c.moveTo(x, y) : c.lineTo(x, y); }
+  c.stroke();
+  const S = Math.pow(10, +$('#rPh').value / 100 * 4);
+  const L = Math.log10(S), snr = 10 * L;
+  c.fillStyle = '#2563eb'; c.beginPath(); c.arc(X(L), Y(snr), 5, 0, 7); c.fill();
+  c.fillStyle = dark ? '#e2e8f0' : '#1f2937'; c.font = 'bold 12px sans-serif';
+  c.fillText('当前: ' + Math.round(S) + ' 光子 → ' + snr.toFixed(1) + 'dB', X(L) - 60, Y(snr) - 12);
+  $('#roSnr2').textContent = snr.toFixed(1) + ' dB';
+  $('#roSnr2').className = 'v ' + judgeSnr(snr)[1];
+  $('#roRatio').textContent = (100 / Math.sqrt(S)).toFixed(1) + '%';
+}
+$('#rPh').addEventListener('input', () => {
+  const S = Math.pow(10, +$('#rPh').value / 100 * 4);
+  $('#vPh').textContent = S < 10 ? S.toFixed(1) : Math.round(S);
+  drawSnrChart();
+});
+
+/* —— 多帧叠加 —— */
+function genFrames(){
+  const nphot = lux2phot(+$('#rLux').value), gain = iso2gain(+$('#rIso').value);
+  frames = [];
+  for (let f = 0; f < 16; f++) frames.push(capture(sceneRGB, nphot, gain));
+  framesNphot = nphot;
+}
+function avgFrames(n){
+  const out = new Float32Array(N * 3);
+  for (let f = 0; f < n; f++) { const b = frames[f].buf;
+    for (let i = 0; i < N * 3; i++) out[i] += b[i]; }
+  for (let i = 0; i < N * 3; i++) out[i] /= n;
+  return out;
+}
+function renderMulti(n){
+  if (!frames || Math.abs(framesNphot - lux2phot(+$('#rLux').value)) > 1e-9 ||
+      Math.abs(frames[0].ideal[0] - curIdeal[0]) > 1e-6) genFrames();
+  put($('#cvF1').getContext('2d'), bufToImage(frames[0].buf));
+  put($('#cvFN').getContext('2d'), bufToImage(avgFrames(n)));
+  const s1 = patchStats(frames[0].buf, frames[0].ideal, brightMask);
+  const sN = patchStats(avgFrames(n), frames[0].ideal, brightMask);
+  const sn1 = 20 * Math.log10(s1.mean / s1.sd), snN = 20 * Math.log10(sN.mean / sN.sd);
+  $('#roSnrF1').textContent = sn1.toFixed(1) + ' dB';
+  $('#roSnrFN').textContent = snN.toFixed(1) + ' dB';
+  $('#roGain').textContent = '+' + (snN - sn1).toFixed(1) + ' dB';
+  $('#roGainT').textContent = '+' + (10 * Math.log10(n)).toFixed(1) + ' dB（√' + n + '）';
+}
+$('#frameBtns').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  $$('#frameBtns button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+  renderMulti(+b.dataset.n);
+});
+
+/* —— 滤波器（真实卷积）—— */
+function clampIdx(i, max){ return i < 0 ? 0 : i >= max ? max - 1 : i; }
+function filtGauss(src){
+  const out = new Float32Array(N * 3), k = [1,2,1,2,4,2,1,2,1];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) for (let ch = 0; ch < 3; ch++) {
+    let s = 0;
+    for (let dy = -1, ki = 0; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++, ki++)
+      s += src[(clampIdx(y+dy,H)*W + clampIdx(x+dx,W))*3 + ch] * k[ki];
+    out[(y*W+x)*3+ch] = s / 16;
+  }
+  return out;
+}
+function filtMedian(src){
+  const out = new Float32Array(N * 3), win = new Array(9);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) for (let ch = 0; ch < 3; ch++) {
+    let n = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++)
+      win[n++] = src[(clampIdx(y+dy,H)*W + clampIdx(x+dx,W))*3 + ch];
+    win.sort((a,b)=>a-b);
+    out[(y*W+x)*3+ch] = win[4];
+  }
+  return out;
+}
+function filtBilateral(src, sr, ss){
+  const out = new Float32Array(N * 3);
+  const sp = []; // 空间权重预计算
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++)
+    sp.push(Math.exp(-(dx*dx+dy*dy) / (2*ss*ss)));
+  const rr = 2 * sr * sr;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const ci = (y*W+x)*3;
+    const cl = 0.2126*src[ci] + 0.7152*src[ci+1] + 0.0722*src[ci+2];
+    for (let ch = 0; ch < 3; ch++) {
+      let sw = 0, sv = 0;
+      for (let dy = -2, si = 0; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++, si++) {
+        const j = (clampIdx(y+dy,H)*W + clampIdx(x+dx,W))*3 + ch;
+        const dl = src[j] - cl;
+        const w = sp[si] * Math.exp(-dl*dl / rr);
+        sw += w; sv += src[j] * w;
+      }
+      out[ci+ch] = sv / sw;
+    }
+  }
+  return out;
+}
+const FDESC = {
+  raw: '原始噪声图：散粒 + 读出噪声叠加后的传感器记录。',
+  gauss: '高斯模糊：邻域一视同仁平均——噪声降了，但边缘、窗灯、星星一起糊掉。',
+  median: '中值滤波：取中位数，对离群噪点杀伤力强，边缘保持比高斯好，但纹理细节仍会钝化。',
+  bilateral: '双边滤波：亮度差太大的邻居"拒收"——平坦区降噪、边缘保留，保边降噪的经典方案（1998）。'
+};
+let filtCur = 'raw', filtT = null;
+function renderFilter(){
+  if (!curNoise1) return;
+  clearTimeout(filtT);
+  filtT = setTimeout(() => {
+  const cv = $('#cvFilt');
+  if (filtCur === 'raw') put(cv.getContext('2d'), bufToImage(curNoise1));
+  else if (filtCur === 'gauss') put(cv.getContext('2d'), bufToImage(filtGauss(curNoise1)));
+  else if (filtCur === 'median') put(cv.getContext('2d'), bufToImage(filtMedian(curNoise1)));
+  else put(cv.getContext('2d'), bufToImage(filtBilateral(curNoise1, 25, 1.5)));
+  }, 150);
+}
+$('#filtBtns').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  $$('#filtBtns button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+  filtCur = b.dataset.f; $('#filtDesc').textContent = FDESC[filtCur]; renderFilter();
+});
+
+/* —— 油画感权衡 —— */
+function detailEnergy(buf, idealRef){
+  // 亮区高频（Laplacian）能量，用于衡量"细节保留率"
+  let e = 0, er = 0;
+  for (let y = 1; y < H-1; y++) for (let x = 1; x < W-1; x++) {
+    if (!brightMask(y*W+x)) continue;
+    for (let ch = 0; ch < 3; ch++) {
+      const i = (y*W+x)*3+ch;
+      const lap = 4*buf[i] - buf[i-3*W] - buf[i+3*W] - buf[i-3] - buf[i+3];
+      const lapr = 4*idealRef[i] - idealRef[i-3*W] - idealRef[i+3*W] - idealRef[i-3] - idealRef[i+3];
+      e += lap*lap; er += lapr*lapr;
+    }
+  }
+  return { e, er };
+}
+let oilT = null;
+function renderOil(){
+  if (!curNoise1 || !curIdeal) return;
+  const sr = 5 + (+$('#rOil').value) / 100 * 55;
+  $('#vOil').textContent = Math.round(sr);
+  clearTimeout(oilT);
+  oilT = setTimeout(() => {
+    const f = filtBilateral(curNoise1, sr, 1.5);
+    put($('#cvOil').getContext('2d'), bufToImage(f));
+    const st = patchStats(f, curIdeal, brightMask);
+    const resid = st.sd;
+    const d0 = detailEnergy(curNoise1, curIdeal);
+    const d1 = detailEnergy(f, curIdeal);
+    const keep = d1.e / Math.max(1e-6, d0.e);
+    $('#roOilN').textContent = resid.toFixed(1) + ' 灰阶';
+    $('#roOilD').textContent = Math.round(keep * 100) + '%';
+    const j = $('#roOilJ');
+    if (keep > .8) { j.textContent = '细节完好'; j.className = 'v ok'; }
+    else if (keep > .5) { j.textContent = '轻度涂抹'; j.className = 'v amber'; }
+    else if (keep > .3) { j.textContent = '油画感出现'; j.className = 'v warn'; }
+    else { j.textContent = '严重涂抹'; j.className = 'v warn'; }
+  }, 130);
+}
+$('#rOil').addEventListener('input', renderOil);
+
+/* —— 流水线点击 —— */
+const PIPE_DESC = [
+  ['📷 RAW 原始数据', '传感器输出的"生肉"：Bayer 马赛克单通道数据（每个像素只记录 R/G/B 之一），伴随全部噪声。一切加工的起点，也是<b>信息最完整</b>的时刻。'],
+  ['⬛ 黑电平校正', '传感器"无光照时也有底值"（黑电平）。先扣掉它，把真正的"零亮度"校准到 0——噪声分析的前提。'],
+  ['🩹 坏点修复', '出厂标定的坏像素（永远黑/永远亮/闪烁）用邻域插值悄悄替换，防止它们变成固定亮点。'],
+  ['🌡️ 镜头阴影校正', '镜头边缘天然偏暗（暗角）且色偏。乘一张标定好的补偿图，把亮度与色彩"摊平"。'],
+  ['🧹 RAW 域降噪', '<b>黄金工位</b>：此刻信号还是线性域，噪声 = 干净的泊松 + 高斯模型，参数可从曝光/ISO/温度推算。多帧合成、时域累积都在这里发生。手机夜景的主战场。'],
+  ['🎨 去马赛克', '从单色马赛克猜出每个像素的真实颜色（插值）。注意：它会把噪声"染色扩散"，所以 Raw 域降噪放在它之前更稳。'],
+  ['🌈 色彩校正', 'CCM 矩阵把传感器色彩空间映射到 sRGB。噪声也会被矩阵混合着放大或压缩。'],
+  ['🎞️ Gamma', '线性亮度 → 人眼感知亮度（幂律曲线）。<b>暗部被大幅拉伸</b>——这就是为什么暗光照片的噪声在最终照片里"看起来特别明显"。'],
+  ['🧼 YUV 域降噪', '显示域的第二道防线：Y（亮度）/UV（色度）分离，色度人眼不敏感可猛降（4:2:0 直接丢弃一半色度），亮度温柔处理。算力友好，中端机主力。'],
+  ['🔪 锐化', '补偿滤波与插值带来的柔化。锐化会同时放大噪声——它和降噪是一对永远的博弈对手，强度调过头就会出现"白边+噪点颗粒"。'],
+  ['💾 编码输出', 'JPEG/HEIF 压缩存盘。压缩对高频噪声有一定"顺带清理"，但也可能让降噪痕迹变得更明显。'],
+];
+$('#pipe').addEventListener('click', e => {
+  const s = e.target.closest('.pstep'); if (!s) return;
+  $$('#pipe .pstep').forEach(x => x.classList.remove('on')); s.classList.add('on');
+  const [t, d] = PIPE_DESC[+s.dataset.i];
+  $('#pipeDesc').innerHTML = '<b>' + t + '</b><br>' + d;
+});
+
+/* —— 测验 —— */
+$$('.quiz').forEach(q => {
+  q.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const ans = q.dataset.a;
+    [...q.querySelectorAll('button')].forEach(x => x.classList.remove('right', 'wrong'));
+    if (b.dataset.k === ans) b.classList.add('right');
+    else { b.classList.add('wrong'); [...q.querySelectorAll('button')].find(x => x.dataset.k === ans).classList.add('right'); }
+    const card = q.closest('.card');
+    card.querySelector('.note[data-exp]').textContent = '💬 ' + card.querySelector('.note[data-exp]').dataset.exp;
+  });
+});
+
+/* —— 导航 / 回顶 / 滚动高亮 —— */
+$('#toTop').addEventListener('click', () => scrollTo({ top: 0, behavior: 'smooth' }));
+const secs = $$('section[id]');
+addEventListener('scroll', () => {
+  let cur = '';
+  for (const s of secs) if (scrollY >= s.offsetTop - 120) cur = s.id;
+  $$('nav.tocbar a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + cur));
+}, { passive: true });
+
+/* —— 启动 —— */
+$('#vPh').textContent = Math.round(Math.pow(10, +$('#rPh').value / 100 * 4));
+renderSim();
+genFrames(); renderMulti(1);
+renderOil();
+$$('#pipe .pstep')[4].classList.add('on');
+$('#pipeDesc').innerHTML = '<b>' + PIPE_DESC[4][0] + '</b><br>' + PIPE_DESC[4][1];
+</script>
+</body>
+</html>

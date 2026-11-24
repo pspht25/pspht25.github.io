@@ -3,6 +3,7 @@ import { getCollection } from 'astro:content';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import FormattedDate from '../components/FormattedDate.astro';
 import { tools } from '../data/tools';
+import { demos } from '../data/demos';
 import { SITE_DESCRIPTION } from '../consts';
 
 const posts = (await getCollection('blog', ({ data }) => !data.draft))
@@ -40,6 +41,19 @@ const posts = (await getCollection('blog', ({ data }) => !data.draft))
           <span class="card-emoji">{tool.emoji}</span>
           <span class="card-title">{tool.title}</span>
           <span class="card-desc">{tool.description}</span>
+        </a>
+      ))}
+    </div>
+  </section>
+
+  <section class="home-section">
+    <h2>演示集 <a class="more" href="/demos/">进入 →</a></h2>
+    <div class="card-grid">
+      {demos.filter((d) => d.ready).map((demo) => (
+        <a class="card" href={`/demos/${demo.slug}/`}>
+          <span class="card-emoji">{demo.emoji}</span>
+          <span class="card-title">{demo.title}</span>
+          <span class="card-desc">{demo.description}</span>
         </a>
       ))}
     </div>

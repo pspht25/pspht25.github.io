@@ -1,0 +1,34 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { demos } from '../../data/demos';
+---
+
+<BaseLayout title="演示集">
+  <h1>演示集</h1>
+  <p class="page-desc">
+    可交互的科学演示，每个演示都是自包含的单文件页面，可整页下载带走。演示注册表在
+    <code>src/data/demos.ts</code>：加一个新演示 = 新建一个 HTML 文件 + 一行注册。
+  </p>
+  <div class="card-grid">
+    {demos.map((demo) =>
+      demo.ready ? (
+        <a class="card" href={`/demos/${demo.slug}/`}>
+          <span class="card-emoji">{demo.emoji}</span>
+          <span class="card-title">{demo.title}</span>
+          <span class="card-desc">{demo.description}</span>
+        </a>
+      ) : (
+        <div class="card card-disabled">
+          <span class="card-emoji">{demo.emoji}</span>
+          <span class="card-title">{demo.title}</span>
+          <span class="card-desc">{demo.description}（待建）</span>
+        </div>
+      ),
+    )}
+    <div class="card card-disabled">
+      <span class="card-emoji">🚧</span>
+      <span class="card-title">更多演示施工中</span>
+      <span class="card-desc">想看什么主题的演示随时提需求</span>
+    </div>
+  </div>
+</BaseLayout>

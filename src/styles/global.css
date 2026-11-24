@@ -310,3 +310,32 @@ html { scroll-behavior: smooth; }
   font-size: 0.85rem;
   text-align: center;
 }
+
+/* ---- 演示集 ---- */
+.demo-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 14px 0;
+}
+.demo-btn {
+  display: inline-block;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--fg);
+  font-size: 0.85rem;
+  text-decoration: none;
+  transition: border-color 0.15s, color 0.15s;
+}
+.demo-btn:hover { border-color: var(--accent); color: var(--accent); }
+.demo-note { font-size: 0.78rem; color: var(--fg-muted); }
+.demo-frame-wrap {
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--card);
+}
+.demo-frame { display: block; width: 100%; height: 80vh; border: 0; }

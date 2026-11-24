@@ -1,0 +1,33 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { demos } from '../../data/demos';
+
+export function getStaticPaths() {
+  return demos
+    .filter((demo) => demo.ready)
+    .map((demo) => ({ params: { slug: demo.slug }, props: { demo } }));
+}
+
+const { demo } = Astro.props;
+---
+
+<BaseLayout title={demo.title} description={demo.description}>
+  <h1>{demo.emoji} {demo.title}</h1>
+  <p class="page-desc">{demo.description}</p>
+  <div class="demo-toolbar">
+    <a class="demo-btn" href={`/demos/${demo.file}`} target="_blank" rel="noopener">⛶ 全屏打开</a>
+    <a class="demo-btn" href={`/demos/${demo.file}`} download={demo.file}>⬇️ 下载单文件</a>
+    <span class="demo-note">整站加密保护中：在线查看与下载的文件均需博客密码打开</span>
+  </div>
+  <div class="demo-frame-wrap">
+    <iframe
+      class="demo-frame"
+      src={`/demos/${demo.file}`}
+      title={demo.title}
+      loading="lazy"
+    ></iframe>
+  </div>
+  <p class="demo-note" style="margin-top: 10px;">
+    演示完全在浏览器本地运行，不收集任何数据。
+  </p>
+</BaseLayout>
