@@ -324,8 +324,6 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   }
 
   // ---------- 转译与执行 ----------
-  let lastJs: string | null = null;
-  let lastBody = '';
 
   function showJsOk(body: string, tMs: number) {
     jsHl.style.display = 'none';
@@ -337,7 +335,6 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   }
 
   function showJsErr(errors: { line: number; msg: string }[]) {
-    lastJs = null;
     jsScroll.style.display = 'none';
     jsHl.style.display = 'block';
     jsHl.style.overflow = 'auto';
@@ -355,8 +352,6 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     const r = transpile(src);
     const tMs = performance.now() - t0;
     if (r.errors.length) { showJsErr(r.errors); return null; }
-    lastJs = r.js;
-    lastBody = r.body;
     showJsOk(r.body, tMs);
     return r;
   }
@@ -381,7 +376,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     if (!r) return;
     const t0 = performance.now();
     try {
-      const res = new Function(RUNTIME + '\n' + js)() as { out: string };
+      const res = new Function(RUNTIME + '\n' + r.js)() as { out: string };
       const tMs = performance.now() - t0;
       const text = res && typeof res.out === 'string' ? res.out : '';
       if (text.length) text.split('\n').forEach((l) => addLine(l, 'ok'));
