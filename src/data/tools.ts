@@ -17,6 +17,13 @@ export const tools: ToolCard[] = [
     ready: true,
   },
   {
+    title: 'Python 解释器',
+    description: '浏览器里的真 CPython（Pyodide），由博客自托管引擎，支持 numpy / scipy / pandas / matplotlib / sympy，代码全部在本地运行',
+    path: '/tools/python-runner/',
+    emoji: '🐍',
+    ready: true,
+  },
+  {
     title: '正则测试器',
     description: '实时匹配高亮与分组捕获',
     path: '/tools/regex/',
