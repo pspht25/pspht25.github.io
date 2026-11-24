@@ -1,0 +1,511 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="Python → JS 转译器" description="把 Python 风格代码转译为原生 JavaScript：纯前端静态转译，毫秒级完成，产物以 V8 原生速度运行，比 WebAssembly 解释执行快一个数量级">
+  <h1>🔁 Python → JS 转译器</h1>
+
+  <div class="intro">
+    <p>输入 <b>Python 风格代码</b>，右侧实时得到等价的 <b>原生 JavaScript</b>。转译在浏览器内<b>静态完成、毫秒级</b>，产物由 V8 直接执行——对比 Pyodide（WASM 解释执行）通常快一个数量级。</p>
+    <p class="muted">与「Python 解释器」互补：解释器跑的是真 CPython（含 numpy 等科学栈）；本页不运行 Python，而是把 Python 语法<b>编译</b>成 JS——适合简单算法与脚本逻辑，产物还能直接复制到任何 JS 项目里用。</p>
+  </div>
+
+  <div class="panes">
+    <div class="pane">
+      <div class="pane-head">Python <span class="muted">（可编辑）</span></div>
+      <div class="hl-wrap">
+        <pre class="hl" id="pyHl" aria-hidden="true"><code></code></pre>
+        <textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Python 代码"></textarea>
+      </div>
+    </div>
+    <div class="pane">
+      <div class="pane-head">JavaScript 产物 <span class="muted">（实时转译）</span></div>
+      <div class="hl-wrap js-pane">
+        <pre class="hl" id="jsHl" aria-hidden="true"><code></code></pre>
+        <div class="js-scroll" id="jsScroll"><pre class="hl" id="jsCode"><code></code></pre></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <button class="btn run" id="btnRun">▶ 运行 <span class="kbd">Ctrl↵</span></button>
+    <span class="sep"></span>
+    <span class="lbl">示例：</span>
+    <button class="btn ghost demo" data-demo="basic">基础</button>
+    <button class="btn ghost demo" data-demo="comp">推导式与排序</button>
+    <button class="btn ghost demo" data-demo="string">字符串处理</button>
+    <button class="btn ghost demo" data-demo="bench">性能对比</button>
+    <span class="sep"></span>
+    <button class="btn ghost" id="btnClear">清空输出</button>
+    <span class="elapsed" id="elapsed"></span>
+  </div>
+
+  <div class="output">
+    <div id="out"><div class="out-empty">输出会显示在这里。左侧改代码，右侧即时更新产物；点「运行」看执行结果。</div></div>
+  </div>
+
+  <div class="intro notes">
+    <p class="muted"><b>支持范围</b>：变量 / 算术运算（含 Python 语义的整除与取模）/ 比较链 / 逻辑短路 / if-elif-else / while / for-in（range 自动生成计数循环）/ 函数与递归 / lambda / f-string / 切片与负索引 / 列表·字典·集合·元组 / 推导式 / 常用内建与方法。第三方库与类（class）暂不支持——遇到不支持语法会给出明确报错。</p>
+    <p class="muted"><b>已知语义差异</b>：真除法结果为整数值时不显示 <code>.0</code>（如 <code>print(170 / 2)</code> 输出 <code>85</code>）；个别二进制浮点边界值上 <code>round</code> 与 CPython 可能相差 ±ulp。</p>
+  </div>
+</BaseLayout>
+
+<style>
+  .intro {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px 18px;
+    margin: 1rem 0 0;
+    box-shadow: var(--shadow);
+  }
+  .intro p { margin: 0.3em 0; font-size: 0.94rem; }
+  .intro .muted { color: var(--fg-muted); font-size: 0.86rem; }
+  .intro.notes { font-size: 0.9rem; }
+  .intro.notes code { font-family: var(--font-mono); font-size: 0.82rem; }
+
+  .statusbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 14px 0 10px;
+    font-size: 0.88rem;
+    color: var(--fg-muted);
+    flex-wrap: wrap;
+  }
+
+  .panes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    align-items: stretch;
+  }
+  @media (max-width: 860px) { .panes { grid-template-columns: 1fr; } }
+  .pane { display: flex; flex-direction: column; min-width: 0; }
+  .pane-head {
+    font-size: 0.84rem;
+    font-weight: 600;
+    margin: 0 0 8px;
+  }
+  .pane-head .muted { color: var(--fg-muted); font-weight: 400; font-size: 0.78rem; }
+
+  /* 高亮编辑器：透明 textarea 叠在高亮 pre 上（与解释器页同款） */
+  .hl-wrap {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--bg-soft);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    flex: 1;
+  }
+  .hl-wrap:focus-within { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  .hl-wrap pre.hl {
+    position: absolute;
+    inset: 0;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 14px 16px;
+    font-family: var(--font-mono);
+    font-size: 0.92rem;
+    line-height: 1.6;
+    tab-size: 4;
+    color: var(--fg);
+    pointer-events: none;
+    overflow: hidden;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  pre.hl code { font: inherit; }
+  textarea {
+    position: relative;
+    display: block;
+    width: 100%;
+    min-height: 300px;
+    resize: vertical;
+    font-family: var(--font-mono);
+    font-size: 0.92rem;
+    line-height: 1.6;
+    padding: 14px 16px;
+    border: none;
+    background: transparent;
+    color: transparent;
+    caret-color: var(--fg);
+    tab-size: 4;
+    box-sizing: border-box;
+  }
+  textarea:focus { outline: none; }
+  .js-pane { min-height: 300px; }
+  .js-pane .js-scroll {
+    position: absolute;
+    inset: 0;
+    overflow: auto;
+    box-sizing: border-box;
+  }
+  .js-pane pre#jsCode {
+    position: static;
+    min-height: 100%;
+    box-sizing: border-box;
+    padding: 14px 16px;
+    font-family: var(--font-mono);
+    font-size: 0.92rem;
+    line-height: 1.6;
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--fg);
+  }
+  .js-pane .js-err {
+    padding: 14px 16px;
+    font-family: var(--font-mono);
+    font-size: 0.86rem;
+    color: #dc2626;
+    white-space: pre-wrap;
+  }
+  .tok-kw { color: #8b5cf6; font-weight: 600; }
+  .tok-str { color: #b45309; }
+  .tok-com { color: var(--fg-muted); font-style: italic; }
+  .tok-num { color: #0284c7; }
+  .tok-bi { color: #0d9488; }
+  .tok-cl { color: #db2777; }
+
+  .toolbar {
+    display: flex; align-items: center; gap: 8px;
+    flex-wrap: wrap;
+    margin: 12px 0;
+  }
+  .btn {
+    font-family: var(--font-sans);
+    font-size: 0.9rem;
+    padding: 8px 16px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.run { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .btn.run:hover { color: #fff; filter: brightness(1.08); }
+  .btn.ghost { background: var(--bg-soft); }
+  .kbd {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    opacity: 0.75;
+    border: 1px solid rgba(255,255,255,.4);
+    border-radius: 4px;
+    padding: 0 4px;
+    margin-left: 4px;
+  }
+  .sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+  .lbl { color: var(--fg-muted); font-size: 0.86rem; }
+  .elapsed { color: var(--fg-muted); font-size: 0.82rem; font-family: var(--font-mono); margin-left: auto; }
+
+  .output {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px 16px;
+    min-height: 120px;
+    max-height: 480px;
+    overflow: auto;
+    box-shadow: var(--shadow);
+  }
+  .out-empty { color: var(--fg-muted); font-size: 0.88rem; }
+  .out-line {
+    font-family: var(--font-mono);
+    font-size: 0.86rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0;
+  }
+  .out-line.err { color: #dc2626; }
+  .out-line.sys { color: var(--fg-muted); font-size: 0.8rem; }
+</style>
+
+<script>
+  import { transpile, RUNTIME } from '../../scripts/py2js';
+
+  const codeEl = document.getElementById('code') as HTMLTextAreaElement;
+  const pyHl = document.getElementById('pyHl') as HTMLElement;
+  const pyCode = pyHl.querySelector('code') as HTMLElement;
+  const jsHl = document.getElementById('jsHl') as HTMLElement;
+  const jsScroll = document.getElementById('jsScroll') as HTMLElement;
+  const jsCodeEl = document.getElementById('jsCode') as HTMLElement;
+  const jsCode = jsCodeEl.querySelector('code') as HTMLElement;
+  const outEl = document.getElementById('out') as HTMLElement;
+  const elapsedEl = document.getElementById('elapsed') as HTMLElement;
+  const btnRun = document.getElementById('btnRun') as HTMLButtonElement;
+  const btnClear = document.getElementById('btnClear') as HTMLButtonElement;
+
+  const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // ---------- Python 高亮（与解释器页同款逐行 tokenizer） ----------
+  const KW = new Set('def return if elif else for while import from as with try except finally class in not and or lambda None True False await async yield global nonlocal assert break continue pass raise del is match case'.split(' '));
+  const BUILTIN = new Set('print len range int float str list dict set tuple sum min max abs round sorted enumerate zip map filter type isinstance bool bytes repr format any all hex oct bin divmod pow iter next reversed'.split(' '));
+
+  function hlPython(src: string): string {
+    const out: string[] = [];
+    for (const line of src.split('\n')) {
+      let html = '';
+      let i = 0;
+      const n = line.length;
+      while (i < n) {
+        const c = line[i]!;
+        if (c === '#') { html += '<span class="tok-com">' + escHtml(line.slice(i)) + '</span>'; break; }
+        const sm = line.slice(i).match(/^[A-Za-z]{0,2}("""|'''|"|')/);
+        if (sm && sm[0] && !/[\w.]/.test(line[i - 1] ?? '')) {
+          const q = sm[1]!;
+          const end = line.indexOf(q, i + sm[0].length);
+          const stop = end === -1 ? n : end + q.length;
+          html += '<span class="tok-str">' + escHtml(line.slice(i, stop)) + '</span>';
+          i = stop;
+          continue;
+        }
+        if (/[0-9]/.test(c) && !/[\w.]/.test(line[i - 1] ?? '')) {
+          const nm = line.slice(i).match(/^0[xXbBoO][\da-fA-F_]+|\d[\d_]*(\.\d[\d_]*)?([eE][+-]?\d+)?[jJ]?/);
+          if (nm) { html += '<span class="tok-num">' + escHtml(nm[0]) + '</span>'; i += nm[0].length; continue; }
+        }
+        const im = line.slice(i).match(/^[A-Za-z_]\w*/);
+        if (im) {
+          const w = im[0];
+          const cls = KW.has(w) ? 'tok-kw' : BUILTIN.has(w) ? 'tok-bi' : /^[A-Z][A-Za-z0-9_]*$/.test(w) ? 'tok-cl' : '';
+          html += cls ? '<span class="' + cls + '">' + escHtml(w) + '</span>' : escHtml(w);
+          i += w.length;
+          continue;
+        }
+        html += escHtml(c);
+        i++;
+      }
+      out.push(html);
+    }
+    return out.join('\n');
+  }
+
+  // ---------- JS 产物高亮 ----------
+  const JS_KW = new Set('function return if else for while const let var new typeof of in instanceof null undefined true false break continue switch case default try catch finally throw class do yield async await delete void this'.split(' '));
+  const JS_BI = new Set('Math Object Array String Number JSON Error Set Map'.split(' '));
+
+  function hlJs(src: string): string {
+    const out: string[] = [];
+    for (const line of src.split('\n')) {
+      let html = '';
+      let i = 0;
+      const n = line.length;
+      while (i < n) {
+        const c = line[i]!;
+        if (c === '/' && line[i + 1] === '/') { html += '<span class="tok-com">' + escHtml(line.slice(i)) + '</span>'; break; }
+        if (c === '"' || c === "'" || c === '`') {
+          let j = i + 1;
+          while (j < n) { if (line[j] === '\\') j += 2; else if (line[j] === c) { j++; break; } else j++; }
+          html += '<span class="tok-str">' + escHtml(line.slice(i, j)) + '</span>';
+          i = j;
+          continue;
+        }
+        if (/[0-9]/.test(c) && !/[\w$]/.test(line[i - 1] ?? '')) {
+          const nm = line.slice(i).match(/^\d[\d_]*(\.\d+)?([eE][+-]?\d+)?/);
+          if (nm) { html += '<span class="tok-num">' + escHtml(nm[0]) + '</span>'; i += nm[0].length; continue; }
+        }
+        const im = line.slice(i).match(/^[$A-Za-z_]\w*/);
+        if (im) {
+          const w = im[0];
+          const cls = JS_KW.has(w) ? 'tok-kw' : w.startsWith('$') ? 'tok-bi' : JS_BI.has(w) ? 'tok-bi' : /^[A-Z]/.test(w) ? 'tok-cl' : '';
+          html += cls ? '<span class="' + cls + '">' + escHtml(w) + '</span>' : escHtml(w);
+          i += w.length;
+          continue;
+        }
+        html += escHtml(c);
+        i++;
+      }
+      out.push(html);
+    }
+    return out.join('\n');
+  }
+
+  // ---------- 转译与执行 ----------
+  let lastJs: string | null = null;
+  let lastBody = '';
+
+  function showJsOk(body: string, tMs: number) {
+    jsHl.style.display = 'none';
+    jsScroll.style.display = 'block';
+    jsCode.innerHTML = hlJs(body) + '\n';
+    elapsedEl.textContent = '转译 ' + tMs.toFixed(1) + ' ms';
+  }
+
+  function showJsErr(errors: { line: number; msg: string }[]) {
+    lastJs = null;
+    jsScroll.style.display = 'none';
+    jsHl.style.display = 'block';
+    jsHl.style.overflow = 'auto';
+    jsHl.style.position = 'static';
+    jsCode.innerHTML = '';
+    const err = document.createElement('div');
+    err.className = 'js-err';
+    err.textContent = errors.map((e) => '行 ' + e.line + ': ' + e.msg).join('\n');
+    jsHl.replaceChildren(err);
+    elapsedEl.textContent = '';
+  }
+
+  function compile(src: string) {
+    const t0 = performance.now();
+    const r = transpile(src);
+    const tMs = performance.now() - t0;
+    if (r.errors.length) { showJsErr(r.errors); return null; }
+    lastJs = r.js;
+    lastBody = r.body;
+    showJsOk(r.body, tMs);
+    return r;
+  }
+
+  function clearEmpty() {
+    const empty = outEl.querySelector('.out-empty');
+    if (empty) empty.remove();
+  }
+
+  function addLine(text: string, cls: string) {
+    clearEmpty();
+    const p = document.createElement('div');
+    p.className = 'out-line ' + cls;
+    p.textContent = text;
+    outEl.appendChild(p);
+    outEl.parentElement!.scrollTop = outEl.parentElement!.scrollHeight;
+  }
+
+  function run() {
+    const src = codeEl.value;
+    const r = lastJs !== null && src.length ? null : compile(src);
+    const js = r ? r.js : lastJs;
+    if (!js) return;
+    const t0 = performance.now();
+    try {
+      const res = new Function(RUNTIME + '\n' + js)() as { out: string };
+      const tMs = performance.now() - t0;
+      const text = res && typeof res.out === 'string' ? res.out : '';
+      if (text.length) text.split('\n').forEach((l) => addLine(l, 'ok'));
+      else addLine('(无输出)', 'sys');
+      const base = elapsedEl.textContent || '';
+      elapsedEl.textContent = base.replace(/ · .*/, '') + ' · 运行 ' + tMs.toFixed(1) + ' ms';
+    } catch (e: any) {
+      addLine('运行错误: ' + (e && e.message ? e.message : String(e)), 'err');
+    }
+  }
+
+  // 输入 → 同步高亮 + 防抖转译
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  function syncHl() {
+    pyCode.innerHTML = hlPython(codeEl.value) + '\n';
+  }
+  codeEl.addEventListener('input', () => {
+    syncHl();
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => { if (codeEl.value.trim()) compile(codeEl.value); else showJsOk('', 0); }, 150);
+  });
+  codeEl.addEventListener('scroll', () => {
+    pyHl.scrollTop = codeEl.scrollTop;
+    pyHl.scrollLeft = codeEl.scrollLeft;
+  });
+
+  btnRun.addEventListener('click', run);
+  codeEl.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const s = codeEl.selectionStart, en = codeEl.selectionEnd;
+      codeEl.value = codeEl.value.slice(0, s) + '    ' + codeEl.value.slice(en);
+      codeEl.selectionStart = codeEl.selectionEnd = s + 4;
+      syncHl();
+    }
+  });
+
+  btnClear.addEventListener('click', () => {
+    outEl.innerHTML = '<div class="out-empty">输出会显示在这里。</div>';
+    elapsedEl.textContent = '';
+  });
+
+  // 示例
+  const DEMOS: Record<string, string> = {
+    basic: `# 函数、循环、f-string、负索引
+def fib(n):
+    a, b = 0, 1
+    for _ in range(n):
+        a, b = b, a + b
+    return a
+
+print("fib(1..10):", [fib(i) for i in range(1, 11)])
+s = "Hello, 心屿"
+print(s[7:], s[::-1], len(s))
+for i in range(3, 0, -1):
+    print(f"倒数 {i}...")
+print("sum =", sum([1, 2, 3, 4, 5]))`,
+    comp: `# 推导式、lambda 排序、字典与集合
+nums = [x * x for x in range(1, 11) if x % 2 == 0]
+print("偶数平方:", nums)
+
+matrix = [[1, 2, 3], [4, 5, 6]]
+flat = [x for row in matrix for x in row]
+print("展平:", flat)
+
+scores = {"心屿": 95, "小明": 88, "小红": 92}
+top = sorted(scores.items(), key=lambda kv: -kv[1])
+for name, sc in top:
+    print(f"{name}: {sc}")
+
+squares = {x: x ** 2 for x in range(5)}
+print(squares, list(squares.keys()))
+
+a = {1, 2, 3}
+b = {2, 3, 4}
+print("交集:", a & b, "并集:", a | b)`,
+    string: `# 字符串方法、切片、raw 字符串
+text = "  the quick the lazy the dog  "
+words = text.strip().split()
+print(words)
+
+counts = {}
+for w in words:
+    counts[w] = counts.get(w, 0) + 1
+print("the 出现:", counts.get("the"), "次")
+
+print("-".join(words[:3]))
+print(text.strip().replace("lazy", "brave").title())
+path = r"C:\\new\\test"
+print(path)
+print("abc"[::-1], "hello"[1:4], "x" * 5)
+print("HELLO".lower().startswith("he"), "py" in "pypi")`,
+    bench: `# 性能感受：转译产物由 V8 原生执行
+# 对比 Pyodide（WASM 解释）通常快 10 倍以上
+import_time_hint = "见输出面板的运行耗时"
+
+def fib(n):
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+print("fib(27) =", fib(27))
+
+total = 0
+for i in range(1000000):
+    total += i
+print("累加 1e6 =", total)
+
+squares = [x * x for x in range(200000)]
+print("平方表长度:", len(squares), "末项:", squares[-1])`,
+  };
+
+  document.querySelectorAll<HTMLButtonElement>('.demo').forEach((b) => {
+    b.addEventListener('click', () => {
+      codeEl.value = DEMOS[b.dataset.demo!] ?? '';
+      syncHl();
+      outEl.innerHTML = '<div class="out-empty">输出会显示在这里。</div>';
+      compile(codeEl.value);
+      run();
+    });
+  });
+
+  // 初始示例
+  codeEl.value = DEMOS.basic;
+  syncHl();
+  compile(codeEl.value);
+</script>

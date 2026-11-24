@@ -31,6 +31,13 @@ export const tools: ToolCard[] = [
     ready: true,
   },
   {
+    title: 'Python → JS 转译器',
+    description: '把 Python 风格代码实时转译为原生 JavaScript：毫秒级静态转译，产物由 V8 直接执行，可复制到任何 JS 项目',
+    path: '/tools/py2js/',
+    emoji: '🔁',
+    ready: true,
+  },
+  {
     title: '正则测试器',
     description: '实时匹配高亮与分组捕获',
     path: '/tools/regex/',
