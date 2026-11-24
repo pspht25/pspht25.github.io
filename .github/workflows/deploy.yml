@@ -17,6 +17,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      SITE_PASS: ${{ secrets.SITE_PASS }}
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
