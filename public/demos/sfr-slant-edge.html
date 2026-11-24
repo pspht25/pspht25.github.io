@@ -1,0 +1,1190 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>斜边法 SFR 测量 · 四步交互演示</title>
+<style>
+:root{
+  color-scheme: light dark;
+  --bg-soft:#111b2e;
+  --chip:#1d2a44;
+}
+html[data-theme='light']{
+  --bg:#f6f8fb;
+  --surface:#ffffff;
+  --surface2:#f1f5f9;
+  --ink:#1f2937;
+  --ink2:#64748b;
+  --line:#e3e9f0;
+  --ch1:#d63b86;   /* CH1 边缘定位 */
+  --ch2:#0e9dbd;   /* CH2 ESF */
+  --ch3:#d97706;   /* CH3 LSF */
+  --ch4:#3f9e63;   /* CH4 MTF */
+  --accent:#2563eb;
+  --accent-soft:rgba(37,99,235,.1);
+  --grid:rgba(15,23,42,.07);
+  --note-bg:rgba(15,23,42,.035);
+}
+html[data-theme='dark']{
+  --bg:#0b1220;
+  --surface:#16223a;
+  --surface2:#1d2a44;
+  --ink:#e2e8f0;
+  --ink2:#94a3b8;
+  --line:#24304a;
+  --ch1:#e05a9b;   /* CH1 边缘定位 */
+  --ch2:#3ec6e0;   /* CH2 ESF */
+  --ch3:#f08c3a;   /* CH3 LSF */
+  --ch4:#63c47f;   /* CH4 MTF */
+  --accent:#5ea2ff;
+  --accent-soft:rgba(94,162,255,.14);
+  --grid:rgba(255,255,255,.05);
+  --note-bg:rgba(255,255,255,.03);
+}
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Courier New",monospace;
+  --sans:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --radius:8px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{
+  margin:0;background:var(--bg);color:var(--ink);overflow-x:hidden;
+  font-family:var(--sans);font-size:16px;line-height:1.7;
+}
+a{color:var(--ch2);text-decoration:none}
+a:hover{text-decoration:underline}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--ch2);outline-offset:2px}
+.wrap{max-width:1180px;margin:0 auto;padding:0 clamp(16px,4vw,40px)}
+header.top{padding:clamp(28px,5vw,52px) 0 8px}
+h1{font-size:clamp(24px,4vw,34px);line-height:1.3;margin:0 0 10px;font-weight:700;letter-spacing:.01em}
+.subtitle{color:var(--ink2);max-width:72ch;margin:0 0 26px}
+nav.steps{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 30px}
+nav.steps a{
+  font-family:var(--mono);font-size:13px;color:var(--ink2);
+  border:1px solid var(--line);border-radius:999px;padding:6px 14px;background:var(--surface);
+}
+nav.steps a:hover{color:var(--ink);text-decoration:none;border-color:var(--ch2)}
+/* 数据流管道 */
+.pipeline{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 18px 10px;margin:0 0 34px;overflow-x:auto}
+.pipeline svg{display:block;min-width:640px;width:100%;height:auto}
+/* 控制台 */
+.console{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;margin:0 0 14px}
+.console h2{margin:0 0 4px;font-size:17px}
+.console p.hint{margin:0 0 16px;color:var(--ink2);font-size:14px}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:18px 28px}
+.ctl label{display:flex;justify-content:space-between;align-items:baseline;font-size:14px;color:var(--ink2);margin-bottom:6px}
+.ctl label b{font-family:var(--mono);color:var(--ink);font-weight:600;font-size:14px}
+.ctl input[type=range]{width:100%;max-width:100%;accent-color:var(--ch2);cursor:pointer}
+.badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.badge{font-family:var(--mono);font-size:12.5px;background:var(--surface2);border:1px solid var(--line);border-radius:6px;padding:5px 10px;color:var(--ink2)}
+.badge b{color:var(--ink);font-weight:600}
+button.act{
+  font-family:var(--mono);font-size:13px;color:var(--ink);background:var(--surface2);
+  border:1px solid var(--line);border-radius:6px;padding:7px 14px;cursor:pointer;
+}
+button.act:hover{border-color:var(--ch2)}
+button.act:active{transform:translateY(1px)}
+/* 章节 */
+section.step{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:clamp(18px,3vw,30px);margin:26px 0;scroll-margin-top:16px;
+}
+.step-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:0 0 6px}
+.step-no{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.06em}
+.step-head h2{margin:0;font-size:clamp(19px,2.6vw,23px)}
+.step .why{color:var(--ink2);margin:0 0 18px;max-width:76ch}
+.step .why strong{color:var(--ink);font-weight:600}
+.duo{display:grid;grid-template-columns:1fr;gap:20px}
+@media (min-width:920px){.duo{grid-template-columns:minmax(0,7fr) minmax(0,5fr)}.duo.rev{grid-template-columns:minmax(0,5fr) minmax(0,7fr)}}
+.duo>*{min-width:0}
+figure{margin:0;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius);padding:14px}
+figure figcaption{font-size:13px;color:var(--ink2);margin-top:10px}
+canvas{display:block;width:100%;height:auto}
+/* 表格 */
+.tblwrap{overflow-x:auto;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius);padding:6px 4px}
+table{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:13px}
+caption{caption-side:top;text-align:left;font-family:var(--sans);font-size:13px;color:var(--ink2);padding:6px 10px}
+th,td{padding:6px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--ink2);font-weight:600;font-size:12px}
+td:first-child,th:first-child{text-align:left}
+tr:last-child td{border-bottom:none}
+td.hl{color:var(--ch1);font-weight:700}
+/* 说明块 */
+.note{border-left:3px solid var(--line);padding:10px 16px;margin:16px 0 0;color:var(--ink2);font-size:14.5px;background:var(--note-bg)}
+.note.c1{border-color:var(--ch1)}.note.c2{border-color:var(--ch2)}.note.c3{border-color:var(--ch3)}.note.c4{border-color:var(--ch4)}
+.note b{color:var(--ink)}
+.formula{font-family:var(--mono);font-size:13.5px;background:var(--surface2);border:1px solid var(--line);border-radius:6px;padding:10px 14px;display:block;margin:12px 0;overflow-x:auto;white-space:nowrap}
+.rowbtns{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0 0}
+.rowbtns span{font-family:var(--mono);font-size:13px;color:var(--ink2)}
+.exps{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin:18px 0 0}
+.exp{background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+.exp h3{margin:0 0 6px;font-size:14.5px}
+.exp p{margin:0;font-size:13.5px;color:var(--ink2)}
+.exp .tag{font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--ink2);display:block;margin-bottom:6px}
+.exp.c2{border-top:2px solid var(--ch2)}.exp.c3{border-top:2px solid var(--ch3)}.exp.c4{border-top:2px solid var(--ch4)}
+footer{color:var(--ink2);font-size:13px;padding:26px 0 40px}
+noscript div{background:#3a2b18;border:1px solid #6b5426;color:#f0d9ac;border-radius:var(--radius);padding:12px 16px;margin:14px 0}
+.probe-read{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 14px}
+.probe-side .ctl{margin:0}
+/* ── 左侧控制台布局 ── */
+.fab{position:fixed;top:12px;right:12px;z-index:80;background:var(--surface);border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:9px 15px;font:600 13px/1.2 var(--sans);cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.4);display:inline-flex;align-items:center;gap:6px}
+.fab:hover{border-color:var(--ch2);color:var(--ch2)}
+.layout{display:flex;gap:22px;align-items:flex-start;margin:0 0 34px}
+aside.console{width:288px;flex:0 0 288px;position:sticky;top:14px;max-height:calc(100vh - 28px);overflow-y:auto;margin:0;scrollbar-width:thin}
+.layout>.content{flex:1;min-width:0}
+.console-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.console-head h2{margin:0}
+.iconbtn{display:none;background:none;border:1px solid var(--line);color:var(--ink2);border-radius:8px;width:30px;height:30px;font-size:15px;cursor:pointer;line-height:1}
+.iconbtn:hover{color:var(--ink);border-color:var(--ink2)}
+.snapbtns{display:flex;gap:8px;margin-top:14px}
+.snapbtns .act{flex:1 1 auto;font-size:12.5px;padding:8px 10px}
+button.ghost{background:transparent;color:var(--ink2)}
+button.ghost:hover{border-color:var(--ink2);color:var(--ink)}
+.snaptip{color:var(--ink2);font-size:12px;line-height:1.65;margin:10px 0 0}
+.snap-chips{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.snap-chip{display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:11.5px;color:var(--ink2);line-height:1.5}
+.snap-chip b{color:var(--ink);font-family:var(--mono)}
+.snap-chip .dot{width:10px;height:10px;border-radius:50%;flex:0 0 10px}
+.snap-chip button{margin-left:auto;background:none;border:none;color:var(--ink2);cursor:pointer;font-size:14px;padding:0 2px;flex:0 0 auto}
+.snap-chip button:hover{color:#e05a9b}
+.drawer-mask{display:none}
+body.console-collapsed aside.console{display:none}
+@media (max-width:1080px){
+  .layout{display:block}
+  aside.console{position:fixed;top:0;left:0;bottom:0;width:min(330px,88vw);max-height:none;border-radius:0;border-top:none;border-bottom:none;border-left:none;transform:translateX(-103%);transition:transform .22s ease;z-index:70;box-shadow:8px 0 30px rgba(0,0,0,.45);overflow-y:auto}
+  body.drawer-open aside.console{transform:none}
+  body.drawer-open .drawer-mask{display:block;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60}
+  .iconbtn{display:inline-flex;align-items:center;justify-content:center}
+}
+@media print{
+  body{background:#fff;color:#111}
+  .console,section.step,figure,.tblwrap,.pipeline{background:#fff;border-color:#bbb}
+  nav.steps,button.act,.rowbtns button,.fab,aside.console,.drawer-mask{display:none}
+  canvas{max-width:100%}
+}
+
+/* ── 顶部导航条（与博客演示集一致）── */
+nav.tocbar{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);overflow-x:auto;white-space:nowrap;margin:0 calc(-1*clamp(16px,4vw,40px))}
+nav.tocbar .in{display:flex;gap:4px;max-width:1180px;margin:0 auto;padding:8px clamp(16px,4vw,40px);padding-right:64px}
+nav.tocbar a{color:var(--ink2);text-decoration:none;font-size:.82rem;padding:4px 10px;border-radius:999px;flex-shrink:0}
+nav.tocbar a:hover{background:var(--accent-soft);color:var(--accent)}
+nav.tocbar .back{color:var(--accent);font-weight:600;border:1px solid var(--line)}
+section.step{scroll-margin-top:52px}
+</style>
+</head>
+<body>
+<nav class="tocbar"><div class="in">
+  <a class="back" id="backDemo" href="/demos/">← 演示集</a>
+  <a href="#s1">① 边缘定位</a><a href="#s2">② ESF 过采样</a><a href="#s3">③ LSF 差分</a><a href="#s3b">④ 频率打分</a><a href="#s3c">⑤ 合成证明</a><a href="#s4">⑥ MTF 曲线</a><a href="#s5">⑦ 动手实验</a>
+</div></nav>
+<div class="wrap">
+
+<header class="top">
+  <button type="button" class="fab" id="btn-console" aria-expanded="true" aria-controls="console" title="展开 / 收起参数控制台">⚙ 参数控制台</button>
+  <h1>斜边法 SFR 测量 · 四步交互演示</h1>
+  <p class="subtitle">把一张斜边照片变成一条 MTF 曲线的完整旅程。每个步骤的中间数据都看得见、算得出——拖动左侧「参数控制台」（手机在右上角 ⚙），全部图表实时重算。</p>
+  <nav class="steps" aria-label="步骤导航">
+    <a href="#console">控制台</a>
+    <a href="#s1">① 成像与定位</a>
+    <a href="#s2">② 过采样 ESF</a>
+    <a href="#s3">③ 差分 LSF</a>
+    <a href="#s3b">③⁺ 对暗号机</a>
+    <a href="#s3c">③⁺⁺ 等价证明</a>
+    <a href="#s4">④ FFT MTF</a>
+    <a href="#s5">动手实验</a>
+  </nav>
+</header>
+
+<div class="pipeline" role="img" aria-label="数据流管道：斜边图像经边缘定位得到逐行交点，堆叠成 ESF 点云，差分为 LSF 钟形曲线，加窗 FFT 得到 MTF 曲线">
+<svg viewBox="0 0 980 132" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <!-- 节点1：像素阵列 + 边缘线 -->
+  <g transform="translate(10,14)">
+    <rect x="0" y="0" width="120" height="72" rx="6" fill="#1d2632" stroke="#2a3543"/>
+    <g fill="#3a4655">
+      <rect x="12" y="12" width="20" height="12" rx="2"/><rect x="12" y="28" width="20" height="12" rx="2"/><rect x="12" y="44" width="20" height="12" rx="2"/>
+      <rect x="36" y="12" width="20" height="12" rx="2"/><rect x="36" y="28" width="20" height="12" rx="2"/><rect x="36" y="44" width="20" height="12" rx="2"/>
+    </g>
+    <g fill="#5a6a7e">
+      <rect x="60" y="12" width="20" height="12" rx="2"/><rect x="60" y="28" width="20" height="12" rx="2"/><rect x="60" y="44" width="20" height="12" rx="2"/>
+    </g>
+    <g fill="#7d8ea3">
+      <rect x="84" y="12" width="20" height="12" rx="2"/><rect x="84" y="28" width="20" height="12" rx="2"/><rect x="84" y="44" width="20" height="12" rx="2"/>
+    </g>
+    <line x1="62" y1="8" x2="84" y2="64" stroke="#e05a9b" stroke-width="2.5" stroke-linecap="round"/>
+    <text x="60" y="90" text-anchor="middle" font-size="12" fill="#e8eef5" font-family="sans-serif">斜边图像</text>
+    <text x="60" y="107" text-anchor="middle" font-size="10.5" fill="#9fb2c3" font-family="sans-serif">像素阵列</text>
+  </g>
+  <path d="M138 50 h30 m-8 -6 l8 6 l-8 6" stroke="#4a586a" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <!-- 节点2：逐行交点 -->
+  <g transform="translate(180,14)">
+    <rect x="0" y="0" width="120" height="72" rx="6" fill="#1d2632" stroke="#2a3543"/>
+    <g fill="#e05a9b">
+      <circle cx="52" cy="14" r="3"/><circle cx="54" cy="26" r="3"/><circle cx="57" cy="38" r="3"/><circle cx="59" cy="50" r="3"/>
+    </g>
+    <line x1="46" y1="10" x2="66" y2="58" stroke="#e05a9b" stroke-width="1.5" opacity=".45"/>
+    <text x="60" y="90" text-anchor="middle" font-size="12" fill="#e8eef5" font-family="sans-serif">逐行 0.5 交点</text>
+    <text x="60" y="107" text-anchor="middle" font-size="10.5" fill="#9fb2c3" font-family="sans-serif">边缘定位</text>
+  </g>
+  <path d="M308 50 h30 m-8 -6 l8 6 l-8 6" stroke="#4a586a" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <!-- 节点3：点云 + S 曲线 -->
+  <g transform="translate(350,14)">
+    <rect x="0" y="0" width="120" height="72" rx="6" fill="#1d2632" stroke="#2a3543"/>
+    <g fill="#3ec6e0" opacity=".55">
+      <circle cx="18" cy="56" r="1.8"/><circle cx="26" cy="54" r="1.8"/><circle cx="34" cy="50" r="1.8"/><circle cx="42" cy="44" r="1.8"/>
+      <circle cx="50" cy="36" r="1.8"/><circle cx="58" cy="28" r="1.8"/><circle cx="66" cy="22" r="1.8"/><circle cx="74" cy="18" r="1.8"/>
+      <circle cx="82" cy="15" r="1.8"/><circle cx="90" cy="14" r="1.8"/><circle cx="98" cy="13" r="1.8"/>
+    </g>
+    <path d="M14 58 C 40 56, 52 30, 66 20 S 96 14, 106 13" stroke="#3ec6e0" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <text x="60" y="90" text-anchor="middle" font-size="12" fill="#e8eef5" font-family="sans-serif">堆叠点云 → ESF</text>
+    <text x="60" y="107" text-anchor="middle" font-size="10.5" fill="#9fb2c3" font-family="sans-serif">亮度过渡曲线</text>
+  </g>
+  <path d="M478 50 h30 m-8 -6 l8 6 l-8 6" stroke="#4a586a" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <!-- 节点4：钟形 LSF -->
+  <g transform="translate(520,14)">
+    <rect x="0" y="0" width="120" height="72" rx="6" fill="#1d2632" stroke="#2a3543"/>
+    <path d="M14 60 C 40 58, 46 54, 54 40 C 60 26, 62 16, 66 16 C 70 16, 72 26, 78 40 C 86 54, 92 58, 118 60" stroke="#f08c3a" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <text x="60" y="90" text-anchor="middle" font-size="12" fill="#e8eef5" font-family="sans-serif">差分 → LSF</text>
+    <text x="60" y="107" text-anchor="middle" font-size="10.5" fill="#9fb2c3" font-family="sans-serif">边缘有多陡</text>
+  </g>
+  <path d="M648 50 h30 m-8 -6 l8 6 l-8 6" stroke="#4a586a" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <!-- 节点5：MTF -->
+  <g transform="translate(690,14)">
+    <rect x="0" y="0" width="120" height="72" rx="6" fill="#1d2632" stroke="#2a3543"/>
+    <line x1="10" y1="43" x2="112" y2="43" stroke="#5a6a7e" stroke-width="1" stroke-dasharray="3 3"/>
+    <path d="M10 14 C 40 16, 62 26, 82 48 C 92 58, 104 62, 112 63" stroke="#63c47f" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <text x="60" y="90" text-anchor="middle" font-size="12" fill="#e8eef5" font-family="sans-serif">加窗 FFT → MTF</text>
+    <text x="60" y="107" text-anchor="middle" font-size="10.5" fill="#9fb2c3" font-family="sans-serif">MTF50 读数</text>
+  </g>
+  <path d="M818 50 h30 m-8 -6 l8 6 l-8 6" stroke="#4a586a" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <!-- 节点6：读数 -->
+  <g transform="translate(856,14)">
+    <rect x="0" y="0" width="118" height="72" rx="6" fill="#1d2632" stroke="#2a3543"/>
+    <text x="59" y="30" text-anchor="middle" font-size="15" fill="#63c47f" font-weight="bold" font-family="monospace" id="pipe-mtf50">0.187</text>
+    <text x="59" y="48" text-anchor="middle" font-size="10.5" fill="#9fb2c3" font-family="sans-serif">MTF50 (cy/px)</text>
+    <text x="59" y="63" text-anchor="middle" font-size="10.5" fill="#9fb2c3" font-family="sans-serif" id="pipe-lwph">LW/PH ≈ 1435</text>
+  </g>
+</svg>
+</div>
+
+<noscript><div>此页面的交互演示需要启用 JavaScript。启用后可以拖动参数、查看每一步的中间数据；未启用时，下方的文字讲解仍然完整可读。</div></noscript>
+
+<div class="layout">
+<aside class="console" id="console">
+  <div class="console-head"><h2>模拟控制台</h2><button type="button" class="iconbtn" id="btn-drawer-close" aria-label="收起控制台">✕</button></div>
+  <p class="hint">下面是一个由程序合成的"虚拟相机"：它按你设的斜角、模糊和噪声生成一张斜边照片，然后完整执行斜边法四步。改任何一个参数，全链路重算。</p>
+  <div class="controls">
+    <div class="ctl">
+      <label for="in-theta">斜边角度 θ <b id="v-theta">5.0°</b></label>
+      <input type="range" id="in-theta" min="0" max="10" step="0.5" value="5">
+    </div>
+    <div class="ctl">
+      <label for="in-sigma">边缘模糊宽度 σ <b id="v-sigma">1.00 px</b></label>
+      <input type="range" id="in-sigma" min="0.6" max="2.0" step="0.05" value="1">
+    </div>
+    <div class="ctl">
+      <label for="in-noise">噪声幅度 <b id="v-noise">2 LSB</b></label>
+      <input type="range" id="in-noise" min="0" max="8" step="0.5" value="2">
+    </div>
+    <div class="ctl">
+      <label for="in-sharp">ISP 锐化强度 <b id="v-sharp">0.00</b></label>
+      <input type="range" id="in-sharp" min="0" max="1.5" step="0.05" value="0">
+    </div>
+  </div>
+  <div class="rowbtns">
+    <button type="button" class="act" id="btn-seed">换一张图（换随机种子）</button>
+    <span>图像规格：72 列 × 160 行 · 黑基准 52 / 白基准 204（8bit）</span>
+  </div>
+  <div class="badges">
+    <span class="badge">tanθ = <b id="b-tan">0.0875</b></span>
+    <span class="badge">过采样倍数 1/tanθ = <b id="b-osf">11.4×</b></span>
+    <span class="badge">ESF 分箱宽度 = <b id="b-bin">0.0875 px</b></span>
+    <span class="badge">点云总数 = <b id="b-pts">—</b></span>
+    <span class="badge">MTF50 = <b id="b-mtf50">—</b></span>
+    <span class="badge">理论 MTF50 = <b id="b-mtf50t">—</b></span>
+    <span class="badge">ESF 过冲 / 欠冲 = <b id="b-ov">—</b></span>
+  </div>
+  <div class="snapbox">
+    <div class="snapbtns">
+      <button type="button" class="act" id="btn-snap">📌 锁定当前曲线</button>
+      <button type="button" class="act ghost" id="btn-clear-snaps">清除对比</button>
+    </div>
+    <p class="snaptip">锁定后，当前 ESF / LSF / MTF 三条曲线以彩色虚线叠加在②③④步图上；继续改参数不影响已锁定的曲线，用于前后对比。最多 4 组，超出自动淘汰最旧一组。</p>
+    <div id="snap-chips" class="snap-chips" style="display:none"></div>
+  </div>
+</aside>
+<div class="content">
+
+<!-- ══════════ STEP 1 ══════════ -->
+<section class="step" id="s1">
+  <div class="step-head"><span class="step-no" style="color:var(--ch1)">CH 1</span><h2>成像与边缘定位：每一行找一个 0.5 交点</h2></div>
+  <p class="why">虚拟相机按 <strong>亮度 = 黑白覆盖比例经高斯模糊 + 噪声</strong> 生成斜边照片。<strong>算法第一步</strong>：对每一行，把像素灰度归一化成 0~1（减黑基准、除以亮暗差），再找归一化亮度恰好等于 <strong>0.5 的位置</strong>——那就是该行的黑白交界。</p>
+  <div class="duo">
+    <figure>
+      <canvas id="cv-img" data-h="380" role="img" aria-label="模拟斜边图像：暗色像素阵列中有一条倾斜的黑白交界，洋红色折线标出每行的 0.5 交点，当前选中行高亮"></canvas>
+      <figcaption>斜边图像（放大到像素级）。洋红点 = 每行的 0.5 交点；点击图像任意一行可选中它。</figcaption>
+    </figure>
+    <div>
+      <div class="rowbtns">
+        <button type="button" class="act" id="btn-row-down">← 上一行</button>
+        <button type="button" class="act" id="btn-row-up">下一行 →</button>
+        <span id="row-label">第 80 / 160 行 · 交点 x = —</span>
+      </div>
+      <div class="tblwrap" style="margin-top:12px">
+        <table>
+          <caption id="cap-row">选中行：像素灰度 → 归一化 → 到边缘的距离</caption>
+          <thead><tr><th scope="col">列号 x</th><th scope="col">灰度 I</th><th scope="col">归一化 (I−52)/152</th><th scope="col">距离 = x − x<sub>c</sub></th></tr></thead>
+          <tbody id="tb-row"></tbody>
+        </table>
+      </div>
+      <div class="note c1"><b>为什么是 0.5？</b>边缘的几何位置定义为"黑白各占一半"处，对应归一化亮度 0.5。演示版用 0.1~0.9 区间线性插值找交点；标准做法（ISO 12233）对整段过渡做曲线拟合再取 0.5，抗噪更强、定位可精确到百分之几像素。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ STEP 2 ══════════ -->
+<section class="step" id="s2">
+  <div class="step-head"><span class="step-no" style="color:var(--ch2)">CH 2</span><h2>沿边缘过采样提取 ESF：把千行点云堆成一条细曲线</h2></div>
+  <p class="why">每行每个像素都变成一个点：<strong>横轴 = 到该行交点的距离</strong>，<strong>纵轴 = 归一化亮度</strong>。边缘垂直（θ=0）时每行的点完全重合，只有 1 像素间隔；斜 θ 时各行交点逐行错开 tanθ，<strong>1/tanθ 行恰好凑满一个像素周期</strong>——点云在横轴上被加密成 0.0875 px 步长（θ=5°）。按 tanθ 宽度分箱取平均，得到 ESF。</p>
+  <div class="duo">
+    <figure>
+      <canvas id="cv-esf" data-h="330" role="img" aria-label="ESF 点云与分箱曲线：灰色空心点是单行能提供的 1 像素间隔采样，青色实点是多行堆叠后的过采样点云，青色粗线是分箱平均后的 ESF 曲线，黑色虚线为理论曲线"></canvas>
+      <figcaption>灰空心点 = 单行独有信息（1 px 间隔）；青点 = 全部行堆叠的过采样点云；青粗线 = 分箱平均后的 ESF；黑虚线 = 理论 Φ(d/σ)。</figcaption>
+    </figure>
+    <div>
+      <div class="tblwrap">
+        <table>
+          <caption>分箱示意（过渡区中段的 6 个 bin）</caption>
+          <thead><tr><th scope="col">bin 距离区间 (px)</th><th scope="col">样点数</th><th scope="col">均值 = ESF</th></tr></thead>
+          <tbody id="tb-bin"></tbody>
+        </table>
+      </div>
+      <div class="note c2" style="margin-top:10px"><b>锐化 = 人造过冲欠冲：</b>拖动左侧<strong>「ISP 锐化强度」</strong>滑杆（USM，半径 1.2 px，作用在加噪之后的像素上）。ESF 会在爬顶后鼓出超过亮平台的小包（<strong>过冲</strong>）、起步前先凹出低于暗平台的小坑（<strong>欠冲</strong>）；差分后 LSF 主瓣旁长出负瓣和正旁瓣；FFT 后高频段 MTF 被人为抬高甚至上翘——"锐"是算法画的边，不是镜头真能解析。徽章实时报过冲/欠冲幅度；ISO 12233 类标准要求报 MTF 前先检查它，超阈值应关锐化重测。另注意：噪声残差本身也会带来 ~1% 的假过冲（把噪声拖到 0 就干净了），锐化过冲会明显得多。</div>
+      <div class="note c2"><b>过采样的全部来源：</b>tan5° ≈ 0.0875，每 11.4 行交点错开整整 1 像素后相位循环——这 11 行合起来把 0~1 px 之间所有亚像素位置摸了一遍。把 θ 拖到 0°：每行交点相同、点云退回 1 px 间隔，过采样消失；这就是斜边存在的意义。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ STEP 3 ══════════ -->
+<section class="step" id="s3">
+  <div class="step-head"><span class="step-no" style="color:var(--ch3)">CH 3</span><h2>差分求导得 LSF：过渡有多陡</h2></div>
+  <p class="why">ESF 只告诉你亮度"怎么爬"，LSF 告诉你爬得<strong>有多陡</strong>：<strong>相邻 bin 的 ESF 值相减</strong>。S 形爬坡线求导后变成钟形——<strong>钟形越窄，边缘越锐利</strong>；镜头把干脆的跳变拖成缓坡时，钟形就又矮又胖。</p>
+  <div class="duo rev">
+    <div>
+      <div class="tblwrap">
+        <table>
+          <caption>差分示意（峰值附近 6 个 bin）</caption>
+          <thead><tr><th scope="col">距离 d (px)</th><th scope="col">ESF S[d]</th><th scope="col">ESF S[d+Δ]</th><th scope="col">ΔS = LSF</th></tr></thead>
+          <tbody id="tb-diff"></tbody>
+        </table>
+      </div>
+      <div class="note c3"><b>求导即差分。</b>LSF(d) ≈ S(d+Δ) − S(d)，Δ 就是分箱宽度。标准实现里对差分核还有细微修正（前后差分取平均），演示版用最直观的前向差分——在 0.0875 px 的细分格上，它与真值的差别在低频段小于 0.1%。</div>
+    </div>
+    <figure>
+      <canvas id="cv-lsf" data-h="330" role="img" aria-label="LSF 曲线图：橙色实线是 ESF 差分得到的钟形曲线，淡青色是 ESF 原曲线对照，黑色虚线是理论高斯曲线"></canvas>
+      <figcaption>淡青 = ESF 原曲线；橙 = 差分后的 LSF 钟形；黑虚线 = 理论高斯 exp(−d²/2σ²)。两者重合说明链路无误。</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ══════════ STEP 3+ 探针对暗号 ══════════ -->
+<section class="step" id="s3b">
+  <div class="step-head"><span class="step-no" style="color:var(--ch3)">CH 3⁺</span><h2>对暗号机：探针怎么给每个频率打分</h2></div>
+  <p class="why">MTF 曲线的每一点都是这样来的：派一条该频率的理想条纹探针 cos(2πf·d)，与 LSF <strong>逐点相乘再求和</strong>——同相得多、反相得少甚至为负。拖动探针频率，看得分在下方一点点长成第④步那条 MTF 曲线。</p>
+  <div class="duo">
+    <figure>
+      <canvas id="cv-probe" data-h="440" role="img" aria-label="探针对暗号演示：上图是 LSF 钟形曲线与当前频率的探针条纹；中图是两者逐点乘积，绿色为正贡献、红色为负贡献；下图是得分随频率累积成的 MTF 曲线，与理论虚线对照"></canvas>
+      <figcaption>上：LSF（橙）与探针（洋红虚线）；中：逐点乘积；下：得分（绿）连成 MTF，灰虚线为理论。打分前 LSF 与主算法一样先做 Hann 加窗，故扫描到底与第④步绿线重合。</figcaption>
+    </figure>
+    <div class="probe-side">
+      <div class="ctl">
+        <label for="in-probe-f">探针频率 f <b id="v-probe-f">0.150 cy/px</b></label>
+        <input type="range" id="in-probe-f" min="0" max="0.62" step="0.002" value="0.15">
+      </div>
+      <div class="probe-read">
+        <span class="badge">cos 得分 = <b id="pb-cos">—</b></span>
+        <span class="badge">sin 得分 = <b id="pb-sin">—</b></span>
+        <span class="badge">|X(f)| = <b id="pb-abs">—</b></span>
+        <span class="badge">|X(0)| = LSF 面积 = <b id="pb-x0">—</b></span>
+        <span class="badge">MTF(f) = |X(f)|÷|X(0)| = <b id="pb-mtf">—</b></span>
+      </div>
+      <button type="button" class="act" id="btn-scan">▶ 自动扫描 0 → 0.62 cy/px</button>
+      <div class="note" style="margin-top:14px"><b>读数逻辑：</b>cos 与 sin 两条探针的得分就是复数 X(f) 的实部与虚部——条纹挪过位置（相位）时一条得分低、另一条会补上，√(cos²+sin²) 对相位不敏感，才是该频率的真实残余含量。除以 |X(0)|（LSF 总面积，即 f=0 的得分）就归一成"相对最粗条纹还剩几成"。<strong>扫描到底，下图与第④步绿线完全重合——MTF 本来就是这么定义的。</strong></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ STEP 3++ 等价性证明 ══════════ -->
+<section class="step" id="s3c">
+  <div class="step-head"><span class="step-no" style="color:var(--ch3)">CH 3⁺⁺</span><h2>为什么这个得分就是对比度保留率——箭头合成证明</h2></div>
+  <p class="why">把"对暗号得分"和"条纹拍完剩几成对比度"焊死的四步：<strong>① 模糊 = 按 LSF 加权平均</strong>（每个物点的像散成 LSF 斑，线性叠加）→ <strong>② 条纹过加权平均仍是同频条纹，只改幅度和相位</strong>（同频正弦相加的铁律）→ <strong>③ 每个 LSF 权重是一支箭头：长度=权重，转角=360°×f×挪位</strong>；箭头首尾相接，<strong>合矢量的长度就是输出条纹幅度</strong> → <strong>④ 除以"箭头全排齐"（f=0）时的长度，就是对比度保留率</strong>。拖动频率，看箭头从排齐到卷成一团。</p>
+  <div class="duo">
+    <figure>
+      <canvas id="cv-arrow" data-h="470" role="img" aria-label="箭头合成证明：上图把每个 LSF 权重画成一支箭头，长度为权重、角度为该邻域挪位造成的相位延迟，箭头首尾相接，绿色合矢量的长度就是输出条纹幅度，灰色虚圆是 f=0 时箭头全排齐的长度；下图对比输入条纹与输出条纹：频率不变，幅度缩小"></canvas>
+      <canvas id="cv-stripe" data-h="210" style="margin-top:10px" role="img" aria-label="条纹实拍对比：上带是原始条纹，对比度百分之百；下带是拍完后的条纹，频率不变、相位微挪，深浅差只剩 MTF(f)"></canvas>
+      <figcaption>箭头图：上为 LSF 权重箭头链（细灰线，显示 |d|≤6 内的箭头）与绿色合矢量，灰虚圆 = 全排齐长度 1.0，下为输入条纹曲线（灰虚线）与输出条纹曲线（绿实线）。条纹带：上带 = 原始条纹（对比度 100%），下带 = 拍完后的条纹——频率纹丝不动，只有深浅差被磨到 MTF(f)。权重已按面积归一，合矢量长度直接就是 MTF(f)。</figcaption>
+    </figure>
+    <div class="probe-side">
+      <div class="ctl">
+        <label for="in-arrow-f">条纹频率 f <b id="v-arrow-f">0.150 cy/px</b></label>
+        <input type="range" id="in-arrow-f" min="0" max="0.62" step="0.002" value="0.15">
+      </div>
+      <div class="probe-read">
+        <span class="badge">每挪 1px 转角 = 360°×f = <b id="ab-deg">—</b></span>
+        <span class="badge">参与合成的箭头数 = <b id="ab-n">—</b></span>
+        <span class="badge">合矢量长度 = 输出幅度 = <b id="ab-amp">—</b></span>
+        <span class="badge">条纹相位挪动 = <b id="ab-ph">—</b></span>
+        <span class="badge">MTF(f) = 长度 ÷ 全排齐长度 = <b id="ab-mtf">—</b></span>
+        <span class="badge">条纹带输出对比度 = <b id="ab-stripe">—</b></span>
+      </div>
+      <div class="note" style="margin-top:14px"><b>三个必看状态：</b>① <strong>f 拖到 0</strong>：所有箭头排齐朝右，合矢量顶到虚圆，输出=输入——最粗的条纹毫无损失，这就是分母 |X(0)|；② <strong>f 升高</strong>：每支箭头多转 360°×f，链开始卷曲，合矢量变短——条纹被磨矮；③ <strong>σ 拖大</strong>：参与卷曲的箭头更多、更早卷紧——"糊 = 高频先死"的几何本体。<strong>合矢量长度 ÷ 虚圆半径 = 对暗号机里的 MTF(f)——同一组权重，两种叙述，一个答案。</strong>对暗号机里的红绿柱相消，就是这里的箭头相消在实轴上的投影。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ STEP 4 ══════════ -->
+<section class="step" id="s4">
+  <div class="step-head"><span class="step-no" style="color:var(--ch4)">CH 4</span><h2>加窗 FFT 得 MTF：各种粗细的线条还剩多少对比度</h2></div>
+  <p class="why">对 LSF 做<strong>Hann 加窗 → 补零到 2048 点 → FFT → 除以零频值归一化</strong>，得到 MTF(f)：0 频处为 1，随频率衰减。<strong>MTF50</strong> 是曲线穿过 0.5 的频率——镜头测试最常用的单一读数。噪声会在高频段把曲线"翘"起来（噪声不挑频率），这是真实测量里常见的现象。</p>
+  <div class="duo">
+    <figure>
+      <canvas id="cv-mtf" data-h="330" role="img" aria-label="MTF 曲线图：绿色实线是算法算出的 MTF，黑色虚线是理论高斯 MTF，绿色水平虚线是 0.5 参考线，灰色竖虚线是像素奈奎斯特频率 0.5"></canvas>
+      <figcaption>绿 = 算法输出的 MTF(f)；黑虚线 = 理论 exp(−2π²σ²f²)；灰竖线 = 像素奈奎斯特频率 0.5 cy/px。</figcaption>
+    </figure>
+    <div>
+      <div class="tblwrap">
+        <table>
+          <caption>MTF 读数</caption>
+          <tbody>
+            <tr><th scope="row">MTF50（算法）</th><td id="td-mtf50">—</td></tr>
+            <tr><th scope="row">MTF50（理论）</th><td id="td-mtf50t">—</td></tr>
+            <tr><th scope="row">换算 LW/PH（3840 宽）</th><td id="td-lwph">—</td></tr>
+            <tr><th scope="row">频率采样间隔</th><td id="td-fres">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note c4"><b>为什么除以零频？</b>FFT 的直流分量代表整体透过率（镜头脏一点它就低），它与"清晰不清晰"无关。除以 MTF(0) 后只留下"随频率衰减的形状"，不同设备才有可比性。LW/PH = MTF50 × 2 × 水平像素数：竖直斜边测的是水平方向分辨率。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 实验 ══════════ -->
+<section class="step" id="s5">
+  <div class="step-head"><h2>动手做三个实验</h2></div>
+  <p class="why">参数都活着——点右上角 ⚙ 打开控制台拖动它们，观察下面三件事，比读十遍文字都直观。</p>
+  <div class="exps">
+    <div class="exp c2">
+      <span class="tag">实验 1 · 角度 ↔ 过采样</span>
+      <h3>把 θ 从 5° 拖到 0°</h3>
+      <p>看第②步：灰空心点不变（单行信息就那么多），青色点云从密集变回 1 px 稀疏——过采样倍数 11.4× 一路掉到"无新相位"。再拖到 0.5°：bin 变得比数据还细，ESF 满是锯齿，MTF50 读数甚至直接失效——角度太小，行数永远不够填满分箱。</p>
+    </div>
+    <div class="exp c3">
+      <span class="tag">实验 2 · 模糊 ↔ MTF50</span>
+      <h3>把 σ 从 1.0 拖到 2.0</h3>
+      <p>第③步钟形变胖，第④步整条 MTF 曲线下压，MTF50 从约 0.19 掉到约 0.09 cy/px。这就是"镜头模糊一倍，读数腰斩"的量化版本。</p>
+    </div>
+    <div class="exp c4">
+      <span class="tag">实验 3 · 噪声 ↔ 高频翘起</span>
+      <h3>把噪声从 2 拖到 8</h3>
+      <p>ESF 点云开始毛糙，MTF 高频段翘离理论虚线——噪声不挑频率，把高频对比度"垫"了回去。真实测量里这就是为什么要把噪声、Light falloff 控制在标准范围内。</p>
+    </div>
+  </div>
+  <div class="note" style="margin-top:22px"><b>与标准实现的关系：</b>本演示按 ISO 12233 斜边法的核心链路（逐行定位 → 距离堆叠分箱 → 差分 → 加窗 FFT → 零频归一）用简化实现复现：0.5 交点用线性插值而非曲线拟合，未做像素孔径与差分核的频响补偿，黑/白基准按每行两侧各 5 列估计。用于建立直觉足够精确；工程测量请使用标准软件。理论对照线基于高斯 PSF 假设：ESF=Φ(d/σ)，LSF=高斯，MTF=exp(−2π²σ²f²)。</div>
+</section>
+</div>
+</div>
+
+<footer>
+  斜边法 SFR 四步交互演示 · 配套《座舱摄像头测试标准》讲义第 4–5 讲 · 所有数据由页面内实时计算生成
+</footer>
+
+</div>
+<div class="drawer-mask" id="drawer-mask" aria-hidden="true"></div>
+
+<script>
+(function(){
+try{
+"use strict";
+/* ───────── 主题同步（与博客站一致）───────── */
+var __T='light';
+try{__T=localStorage.getItem('theme')||(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}catch(_){}
+document.documentElement.dataset.theme=__T;
+if(location.protocol==='file:'){var __bd=document.getElementById('backDemo');if(__bd)__bd.style.display='none';}
+/* ───────── 状态与参数 ───────── */
+var COLS=72, ROWS=160, IBLK=52, IWHT=204, RANGE=IWHT-IBLK, DMAG=18;
+var state={theta:5, sigma:1.0, noise:2, seed:7, row:80, sharp:0, probeF:0.15, arrowF:0.15};
+var snaps=[];var SNAP_COLORS=['#e05a9b','#3ec6e0','#c8a2e0','#f08c3a'];
+function $(id){return document.getElementById(id)}
+function tanT(){return Math.tan(state.theta*Math.PI/180)}
+
+/* ───────── 随机数（可复现）───────── */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+var gaussSpare=null;
+function gauss(rnd){ if(gaussSpare!==null){var s=gaussSpare;gaussSpare=null;return s}
+  var u=0,v=0; while(u===0)u=rnd(); while(v===0)v=rnd();
+  var m=Math.sqrt(-2*Math.log(u)); gaussSpare=m*Math.sin(2*Math.PI*v); return m*Math.cos(2*Math.PI*v)}
+
+/* ───────── 数学 ───────── */
+function erf(x){var s=x<0?-1:1;x=Math.abs(x);var t=1/(1+0.3275911*x);
+  var y=1-((((1.061405429*t-1.453152027)*t+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x);
+  return s*y}
+function Phi(z){return 0.5*(1+erf(z/Math.SQRT2))}
+function fft(re,im){var n=re.length,i,j,len,bit;
+  for(i=1,j=0;i<n;i++){bit=n>>1;for(;j&bit;bit>>=1)j^=bit;j^=bit;
+    if(i<j){var tr=re[i];re[i]=re[j];re[j]=tr;var ti=im[i];im[i]=im[j];im[j]=ti}}
+  for(len=2;len<=n;len<<=1){var ang=-2*Math.PI/len,wr=Math.cos(ang),wi=Math.sin(ang);
+    for(i=0;i<n;i+=len){var cr=1,ci=0;
+      for(j=0;j<len/2;j++){var k1=i+j,k2=i+j+len/2;
+        var vr=re[k2]*cr-im[k2]*ci, vi=re[k2]*ci+im[k2]*cr;
+        re[k2]=re[k1]-vr; im[k2]=im[k1]-vi; re[k1]+=vr; im[k1]+=vi;
+        var ncr=cr*wr-ci*wi; ci=cr*wi+ci*wr; cr=ncr}}}
+}
+function fmt(v,n){return v.toFixed(n===undefined?3:n)}
+
+/* ───────── 全链路计算 ───────── */
+var model={};
+function compute(){
+  var th=tanT(), sig=state.sigma, ns=state.noise;
+  var rnd=mulberry32(state.seed*7919+Math.round(sig*100)*31+Math.round(ns)*17);
+  gaussSpare=null;
+  /* 1) 合成图像：每行交点 xc(r)，亮度=覆盖比例过高斯+噪声 */
+  var img=[],xc=[];
+  for(var r=0;r<ROWS;r++){
+    img.push(new Array(COLS));
+    xc.push(COLS/2+(r-ROWS/2)*th);
+    for(var c=0;c<COLS;c++){
+      var v=IBLK+RANGE*Phi((c-xc[r])/sig)+gauss(rnd)*ns;
+      img[r][c]=Math.max(0,Math.min(255,v));
+    }
+  }
+  /* 1b) ISP 锐化（USM）：img + A·(img − 高斯模糊 img)，作用在加噪之后的像素上——
+     会把噪声一起放大，并在边缘两侧产生过冲/欠冲 */
+  var sa=state.sharp||0;
+  if(sa>0){
+    var sr=1.2,kw=4,kk,kern=[],ks=0,ii,jj;
+    for(kk=-kw;kk<=kw;kk++){kern.push(Math.exp(-kk*kk/(2*sr*sr)));ks+=kern[kk+kw]}
+    for(kk=0;kk<kern.length;kk++)kern[kk]/=ks;
+    var tA=[],tB=[];
+    for(ii=0;ii<ROWS;ii++){
+      tA.push(new Array(COLS));
+      for(jj=0;jj<COLS;jj++){var sA=0;
+        for(kk=-kw;kk<=kw;kk++){var cc2=Math.min(COLS-1,Math.max(0,jj+kk));sA+=img[ii][cc2]*kern[kk+kw]}
+        tA[ii][jj]=sA;
+      }
+    }
+    for(ii=0;ii<ROWS;ii++){
+      tB.push(new Array(COLS));
+      for(jj=0;jj<COLS;jj++){var sB=0;
+        for(kk=-kw;kk<=kw;kk++){var rr2=Math.min(ROWS-1,Math.max(0,ii+kk));sB+=tA[rr2][jj]*kern[kk+kw]}
+        tB[ii][jj]=sB;
+      }
+    }
+    for(ii=0;ii<ROWS;ii++)for(jj=0;jj<COLS;jj++){
+      var vU=img[ii][jj]+sa*(img[ii][jj]-tB[ii][jj]);
+      img[ii][jj]=Math.max(0,Math.min(255,vU));
+    }
+  }
+  /* 2) 逐行定位：行两端各5列估黑白基准 → 归一化 → 0.5 插值 */
+  var blk=[],wht=[],norm=[];
+  for(r=0;r<ROWS;r++){
+    var b=0,w=0;
+    for(var k=0;k<5;k++){b+=img[r][k]; w+=img[r][COLS-1-k]}
+    b/=5; w/=5; blk.push(b); wht.push(w);
+    norm.push(new Array(COLS));
+    for(c=0;c<COLS;c++) norm[r][c]=(img[r][c]-b)/Math.max(1e-6,w-b);
+  }
+  var xhalf=[];
+  for(r=0;r<ROWS;r++){
+    var xf=null;
+    for(c=1;c<COLS;c++){
+      if(norm[r][c-1]<0.5&&norm[r][c]>=0.5){
+        var t=(0.5-norm[r][c-1])/(norm[r][c]-norm[r][c-1]);
+        xf=(c-1)+t; break;
+      }
+    }
+    xhalf.push(xf===null?xc[r]:xf);
+  }
+  /* 3) 点云：所有像素 → (距离, 归一化亮度) */
+  var pts=[],ptsCount=0;
+  for(r=0;r<ROWS;r++)for(c=0;c<COLS;c++){
+    var d=c-xhalf[r];
+    if(Math.abs(d)<=DMAG){pts.push([d,norm[r][c]]);ptsCount++}
+  }
+  /* 4) 分箱：bin 宽 = tanθ（θ<0.3° 退化为 1px） */
+  var degenerate=state.theta<0.3;
+  var binW=degenerate?1.0:Math.max(th,1e-4);
+  var nb=Math.round(2*DMAG/binW), binSum=new Array(nb).fill(0), binCnt=new Array(nb).fill(0);
+  for(var p=0;p<pts.length;p++){
+    var bi=Math.floor((pts[p][0]+DMAG)/binW);
+    if(bi>=0&&bi<nb){binSum[bi]+=pts[p][1];binCnt[bi]++}
+  }
+  var esf=new Array(nb).fill(null);
+  for(i=0;i<nb;i++) if(binCnt[i]>0) esf[i]=binSum[i]/binCnt[i];
+  /* 空 bin 用最近邻插值填满（便于差分） */
+  for(i=0;i<nb;i++) if(esf[i]===null){
+    var L=i-1,R=i+1;
+    while(L>=0&&esf[L]===null)L--;
+    while(R<nb&&esf[R]===null)R++;
+    if(L>=0&&R<nb){var w2=(i-L)/(R-L); esf[i]=esf[L]*(1-w2)+esf[R]*w2}
+    else esf[i]=(L>=0?esf[L]:esf[R]);
+  }
+  /* 5) 差分 LSF */
+  var lsf=[],lsfD=[];
+  for(i=0;i<nb-1;i++){var dd=(esf[i+1]-esf[i]); lsf.push(dd); lsfD.push((i+0.5)*binW-DMAG)}
+  var lmax=0; for(i=0;i<lsf.length;i++) if(lsf[i]>lmax)lmax=lsf[i];
+  /* 6) 加窗 FFT → MTF */
+  var L=lsf.length, N=2048;
+  while(N<L&&N<32768)N<<=1;
+  var re=new Array(N).fill(0), im=new Array(N).fill(0);
+  for(i=0;i<Math.min(L,N);i++) re[i]=lsf[i]*(0.5*(1-Math.cos(2*Math.PI*i/(L-1))));
+  fft(re,im);
+  var dc=Math.abs(re[0])||1e-9;
+  var mtf=[],mf=[];
+  var kmax=Math.min(N/2-1,Math.ceil(0.62*N*binW));
+  for(var k2=1;k2<=kmax;k2++){mf.push(k2/(N*binW)); mtf.push(Math.sqrt(re[k2]*re[k2]+im[k2]*im[k2])/dc)}
+  /* MTF50：首个下穿 0.5 */
+  var m50=null;
+  for(i=0;i<mtf.length-1;i++){
+    if(mtf[i]>=0.5&&mtf[i+1]<0.5){m50=mf[i]+(mtf[i]-0.5)/(mtf[i]-mtf[i+1])*(mf[i+1]-mf[i]);break}
+  }
+  var m50t=Math.sqrt(Math.LN2/(2*Math.PI*Math.PI*sig*sig));
+  /* 过冲/欠冲：ESF 相对上下平台的偏离（%） */
+  var ovE=-9,unE=9;
+  for(i=0;i<nb;i++){if(esf[i]>ovE)ovE=esf[i];if(esf[i]<unE)unE=esf[i]}
+  var overPct=Math.max(0,(ovE-1)*100), underPct=Math.max(0,-unE*100);
+  model={img:img,xc:xc,xhalf:xhalf,norm:norm,blk:blk,wht:wht,pts:pts,ptsCount:ptsCount,
+    binW:binW,nb:nb,esf:esf,binCnt:binCnt,lsf:lsf,lsfD:lsfD,lmax:lmax,mtf:mtf,mf:mf,m50:m50,m50t:m50t,fres:1/(N*binW),
+    degenerate:degenerate,th:th,sig:sig,over:overPct,under:underPct};
+}
+
+/* ───────── 绘图基础 ───────── */
+var css=getComputedStyle(document.documentElement);
+function cv(i){return css.getPropertyValue(i).trim()}
+var C_INK=cv('--ink'),C_INK2=cv('--ink2'),C_LINE=cv('--line'),C_S2=cv('--surface2'),C_GRID=cv('--grid');
+var C1=cv('--ch1'),C2=cv('--ch2'),C3=cv('--ch3'),C4=cv('--ch4');
+function applyThemeColors(){C_INK=cv('--ink');C_INK2=cv('--ink2');C_LINE=cv('--line');C_S2=cv('--surface2');C_GRID=cv('--grid');C1=cv('--ch1');C2=cv('--ch2');C3=cv('--ch3');C4=cv('--ch4');}
+window.addEventListener('storage',function(e){if(e.key==='theme'&&e.newValue){document.documentElement.dataset.theme=e.newValue;applyThemeColors();refresh();}});
+try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',function(){try{var t=localStorage.getItem('theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');if(t!==document.documentElement.dataset.theme){document.documentElement.dataset.theme=t;applyThemeColors();refresh();}}catch(_){}})}catch(_){}
+function prep(cvEl){var dpr=window.devicePixelRatio||1;
+  var w=cvEl.clientWidth||cvEl.parentNode.clientWidth, h=cvEl.getAttribute('data-h')?parseInt(cvEl.getAttribute('data-h')):300;
+  if(cvEl.width!==Math.round(w*dpr)||cvEl.height!==Math.round(h*dpr)){cvEl.width=Math.round(w*dpr);cvEl.height=Math.round(h*dpr)}
+  var g=cvEl.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,w,h);
+  return {g:g,w:w,h:h}}
+function frame(g,x,y,w,h,xt,yt,xmin,xmax,ymin,ymax){
+  g.strokeStyle=C_LINE;g.lineWidth=1;
+  g.strokeRect(x,y,w,h);
+  g.fillStyle=C_INK2;g.font='11px '+cv('--mono');g.textAlign='center';
+  var n=xt.length;
+  for(var i=0;i<n;i++){var px=x+(xt[i]-xmin)/(xmax-xmin)*w;
+    g.strokeStyle=C_GRID;g.beginPath();g.moveTo(px,y);g.lineTo(px,y+h);g.stroke();
+    g.fillText(xt[i],px,y+h+14)}
+  g.textAlign='right';
+  n=yt.length;
+  for(i=0;i<n;i++){var py=y+h-(yt[i]-ymin)/(ymax-ymin)*h;
+    g.strokeStyle=C_GRID;g.beginPath();g.moveTo(x,py);g.lineTo(x+w,py);g.stroke();
+    g.fillText(yt[i],x-6,py+3)}
+  g.textAlign='left';
+}
+function polyline(g,x,y,w,h,xmin,xmax,ymin,ymax,arr,color,lw,dash){
+  g.save();g.strokeStyle=color;g.lineWidth=lw||2;g.setLineDash(dash||[]);
+  g.beginPath();var started=false;
+  for(var i=0;i<arr.length;i++){var px=x+(arr[i][0]-xmin)/(xmax-xmin)*w, py=y+h-(arr[i][1]-ymin)/(ymax-ymin)*h;
+    if(px<x-1||px>x+w+1){continue}
+    if(!started){g.moveTo(px,py);started=true}else g.lineTo(px,py)}
+  g.stroke();g.restore();
+}
+function dots(g,x,y,w,h,xmin,xmax,ymin,ymax,arr,color,r,strokeOnly,alpha){
+  g.save();g.globalAlpha=alpha===undefined?1:alpha;
+  for(var i=0;i<arr.length;i++){var px=x+(arr[i][0]-xmin)/(xmax-xmin)*w, py=y+h-(arr[i][1]-ymin)/(ymax-ymin)*h;
+    if(px<x-2||px>x+w+2)continue;
+    g.beginPath();g.arc(px,py,r,0,6.2832);
+    if(strokeOnly){g.strokeStyle=color;g.lineWidth=1.2;g.stroke()}else{g.fillStyle=color;g.fill()}}
+  g.restore();
+}
+
+/* ───────── 各图绘制 ───────── */
+function drawImage(){
+  var el=$('cv-img'),P=prep(el),g=P.g,W=P.w,H=P.h;
+  var mL=8,mT=8,mR=8,mB=26,x=mL,y=mT,w=W-mL-mR,h=H-mT-mB;
+  var cw=w/COLS, ch=h/ROWS;
+  g.fillStyle='#0a0e13';g.fillRect(x,y,w,h);
+  for(var r=0;r<ROWS;r++)for(var c=0;c<COLS;c++){
+    var v=Math.round(model.img[r][c]);
+    g.fillStyle='rgb('+v+','+v+','+v+')';
+    g.fillRect(x+c*cw,y+r*ch,cw+0.6,ch+0.6);
+  }
+  /* 网格线 */
+  g.strokeStyle='rgba(255,255,255,.05)';g.lineWidth=0.5;g.beginPath();
+  for(c=1;c<COLS;c++){g.moveTo(x+c*cw,y);g.lineTo(x+c*cw,y+h)}
+  for(r=1;r<ROWS;r++){g.moveTo(x,y+r*ch);g.lineTo(x+w,y+r*ch)}
+  g.stroke();
+  /* 0.5 交点连线 */
+  g.strokeStyle=C1;g.lineWidth=1.6;g.globalAlpha=.75;g.beginPath();
+  for(r=0;r<ROWS;r++){var px=x+model.xhalf[r]*cw,py=y+(r+0.5)*ch;
+    if(r===0)g.moveTo(px,py);else g.lineTo(px,py)}
+  g.stroke();g.globalAlpha=1;
+  for(r=0;r<ROWS;r+=10){g.fillStyle=C1;g.beginPath();
+    g.arc(x+model.xhalf[r]*cw,y+(r+0.5)*ch,2.4,0,6.2832);g.fill()}
+  /* 选中行高亮 */
+  var sr=state.row;
+  g.strokeStyle='rgba(255,255,255,.9)';g.lineWidth=1.5;
+  g.strokeRect(x-1,y+sr*ch-1,w+2,ch+2);
+  g.fillStyle='rgba(255,255,255,.06)';g.fillRect(x,y+sr*ch,w,ch);
+  /* 选中行的 0.5 交点大点 */
+  g.fillStyle=C1;g.beginPath();
+  g.arc(x+model.xhalf[sr]*cw,y+(sr+0.5)*ch,5,0,6.2832);g.fill();
+  g.strokeStyle='#fff';g.lineWidth=1.4;g.stroke();
+  g.fillStyle=C_INK2;g.font='11px '+cv('--mono');
+  g.textAlign='left';g.fillText('0° 方向 →',x,y+h+16);
+  g.textAlign='right';g.fillText('θ = '+state.theta.toFixed(1)+'°（每行交点逐行右移 tanθ）',x+w,y+h+16);
+}
+/* ───────── 箭头合成证明 ───────── */
+function arrowW(){
+  var L=model.lsf.length,w=new Array(L),s=0,i;
+  for(i=0;i<L;i++){w[i]=model.lsf[i]*(0.5*(1-Math.cos(2*Math.PI*i/(L-1))));s+=w[i]}
+  if(s<1e-12)s=1;
+  for(i=0;i<L;i++)w[i]/=s;
+  return w;
+}
+function arrowSum(f,wgt){
+  var L=model.lsf.length,re=0,im=0,i;
+  for(i=0;i<L;i++){
+    var ang=2*Math.PI*f*model.lsfD[i];
+    re+=wgt[i]*Math.cos(ang); im-=wgt[i]*Math.sin(ang);
+  }
+  var amp=Math.sqrt(re*re+im*im),ph=Math.atan2(im,re);
+  return {re:re,im:im,amp:amp,ph:ph,n:L};
+}
+function drawStripe(){
+  var el=$('cv-stripe');if(!el)return;
+  var P=prep(el),g=P.g,W=P.w,H=P.h;
+  var f=Math.max(0,state.arrowF||0);
+  var s=arrowSum(f,arrowW());
+  var x0=52,x1=W-14,xw=x1-x0,XMAX=12,i;
+  var bands=[{y:34,h:64,amp:1,ph:0,lab:'输入 · 对比度 100%'},
+             {y:126,h:64,amp:s.amp,ph:s.ph,lab:'输出 · 对比度 '+(s.amp*100).toFixed(1)+'%'}];
+  g.fillStyle=C_INK2;g.font='10.5px '+cv('--sans');g.textAlign='center';
+  g.fillText('条纹实拍：同一根条纹，拍完只剩这么多深浅差',W/2,20);
+  for(i=0;i<2;i++){
+    var b=bands[i];
+    for(var px=0;px<=xw;px+=1){
+      var v=Math.round(127.5+102*b.amp*Math.cos(2*Math.PI*f*(px/xw*XMAX)+b.ph));
+      g.fillStyle='rgb('+v+','+v+','+v+')';
+      g.fillRect(x0+px,b.y,1.2,b.h);
+    }
+    g.strokeStyle=C_LINE;g.lineWidth=1;g.strokeRect(x0,b.y,xw,b.h);
+    g.fillStyle='rgba(10,14,20,.72)';g.fillRect(x0+8,b.y+8,172,18);
+    g.fillStyle='#e8edf4';g.font='10.5px '+cv('--mono');g.textAlign='left';
+    g.fillText(b.lab,x0+14,b.y+21);
+  }
+  g.fillStyle=C_INK2;g.font='10.5px '+cv('--sans');g.textAlign='center';
+  g.fillText(f<1e-6?'f = 0：输出 = 输入，对比度一点没丢':'频率没变（周期 '+(1/f).toFixed(2)+' px），只有深浅被磨掉 —— 输出对比度 = MTF(f)',W/2,H-8);
+  $('ab-stripe').textContent=(s.amp*100).toFixed(1)+'%';
+}
+function updateArrowRead(){
+  var f=Math.max(0,state.arrowF||0);
+  var s=arrowSum(f,arrowW());
+  $('v-arrow-f').textContent=f.toFixed(3)+' cy/px';
+  $('ab-deg').textContent=Math.round(360*f)+'°';
+  $('ab-n').textContent=s.n;
+  $('ab-amp').textContent=s.amp.toFixed(3);
+  $('ab-ph').textContent=f>1e-6?(-s.ph/(2*Math.PI*f)).toFixed(2)+' px':'0 px';
+  $('ab-mtf').textContent=s.amp.toFixed(3);
+}
+function drawArrow(){
+  var el=$('cv-arrow');if(!el)return;
+  var P=prep(el),g=P.g,W=P.w,H=P.h;
+  var f=Math.max(0,state.arrowF||0);
+  var wgt=arrowW(),L=model.lsf.length,i;
+  var x=52,w=W-x-14;
+  /* 子图A：箭头链 */
+  var yA=22,hA=212;
+  var cx=x+w/2,cy=yA+hA/2,R=Math.min(w*0.42,hA*0.44);
+  g.fillStyle=C_INK2;g.font='10.5px '+cv('--sans');g.textAlign='center';
+  g.fillText('箭头链：长度 = LSF 权重 · 转角 = 360°×f×挪位',cx,yA-7);
+  g.save();g.strokeStyle='#8a97a8';g.setLineDash([4,4]);g.globalAlpha=.55;
+  g.beginPath();g.arc(cx,cy,R,0,6.2832);g.stroke();g.restore();
+  g.fillStyle='#8a97a8';g.font='10px '+cv('--mono');g.textAlign='left';
+  g.fillText('虚圆 = 全排齐(1.0)',cx+R*0.55,cy-R*0.85);
+  var ex=cx,ey=cy;
+  g.strokeStyle='rgba(125,142,163,.55)';g.lineWidth=1;
+  for(i=0;i<L;i++){
+    var d=model.lsfD[i];if(Math.abs(d)>6)continue;
+    var ang=2*Math.PI*f*d;
+    var dx=Math.cos(ang)*wgt[i]*R, dy=-Math.sin(ang)*wgt[i]*R;
+    g.beginPath();g.moveTo(ex,ey);g.lineTo(ex+dx,ey+dy);g.stroke();
+    ex+=dx;ey+=dy;
+  }
+  g.fillStyle='rgba(125,142,163,.85)';g.beginPath();g.arc(ex,ey,2,0,6.2832);g.fill();
+  g.save();g.strokeStyle=C4;g.lineWidth=2.6;
+  g.beginPath();g.moveTo(cx,cy);g.lineTo(ex,ey);g.stroke();g.restore();
+  g.fillStyle=C4;g.beginPath();g.arc(ex,ey,3.5,0,6.2832);g.fill();
+  g.fillStyle=C_INK2;g.font='10.5px '+cv('--sans');g.textAlign='left';
+  g.fillText('细灰线=各权重箭头 · 绿=合矢量（长度即输出幅度）',x+8,yA+hA-8);
+  /* 子图B：输入/输出条纹 */
+  var yB=yA+hA+16,hB=196;
+  frame(g,x,yB,w,hB,[0,2,4,6,8,10,12].map(Number),[-1,0,1],0,12,-1.15,1.15);
+  g.fillStyle=C_INK2;g.font='10.5px '+cv('--sans');g.textAlign='center';
+  g.fillText('同一根条纹拍完：频率不变，幅度 = 合矢量长度',cx,yB-7);
+  var s=arrowSum(f,wgt),pin=[],pout=[];
+  for(i=0;i<=240;i++){var xx=12*i/240;
+    pin.push([xx,Math.cos(2*Math.PI*f*xx)]);
+    pout.push([xx,s.amp*Math.cos(2*Math.PI*f*xx+s.ph)]);
+  }
+  polyline(g,x,yB,w,hB,0,12,-1.15,1.15,pin,'#8a97a8',1.3,[5,4]);
+  polyline(g,x,yB,w,hB,0,12,-1.15,1.15,pout,C4,2.2);
+  g.textAlign='left';g.font='11px '+cv('--sans');
+  g.fillStyle='#8a97a8';g.fillText('输入（幅度 1）',x+8,yB+14);
+  g.fillStyle=C4;g.fillText('输出（幅度 '+s.amp.toFixed(3)+'）',x+112,yB+14);
+  g.fillStyle=C_INK2;g.textAlign='center';g.font='10.5px '+cv('--sans');
+  g.fillText('位置（像素）',cx,yB+hB+30);
+}
+/* ───────── 探针对暗号机 ───────── */
+function probeScore(f){
+  var L=model.lsf.length,re=0,im=0,x0=0,i;
+  for(i=0;i<L;i++){
+    var v=model.lsf[i]*(0.5*(1-Math.cos(2*Math.PI*i/(L-1))));
+    x0+=v;
+    var ph=2*Math.PI*f*model.lsfD[i];
+    re+=v*Math.cos(ph); im-=v*Math.sin(ph);
+  }
+  return {re:re,im:im,abs:Math.sqrt(re*re+im*im),x0:x0};
+}
+function updateProbeRead(){
+  var f=Math.max(0,state.probeF||0);
+  var s=probeScore(f);
+  $('v-probe-f').textContent=f.toFixed(3)+' cy/px';
+  $('pb-cos').textContent=s.re.toFixed(3);
+  $('pb-sin').textContent=s.im.toFixed(3);
+  $('pb-abs').textContent=s.abs.toFixed(3);
+  $('pb-x0').textContent=s.x0.toFixed(3);
+  $('pb-mtf').textContent=s.x0>1e-9?(s.abs/s.x0).toFixed(3):'—';
+}
+function drawProbe(){
+  var el=$('cv-probe');if(!el)return;
+  var P=prep(el),g=P.g,W=P.w,H=P.h;
+  var f=Math.max(0,state.probeF||0);
+  var x=52,mR=14,w=W-x-mR;
+  var xmin=-6,xmax=6,L=model.lsf.length,i;
+  var lsfN=model.lmax>0?1/model.lmax:1;
+  /* 子图1：LSF + 探针 */
+  var y1=18,h1=148,ymin=-1.15,ymax=1.15;
+  frame(g,x,y1,w,h1,[-6,-4,-2,0,2,4,6].map(Number),[-1,0,1],xmin,xmax,ymin,ymax);
+  g.fillStyle=C_INK2;g.font='10.5px '+cv('--sans');g.textAlign='center';
+  g.fillText('LSF 与探针 cos(2πf·d)',x+w/2,y1-5);
+  var pts=[];
+  for(i=0;i<L;i++){var d=model.lsfD[i];if(d<xmin-0.5||d>xmax+0.5)continue;pts.push([d,model.lsf[i]*lsfN])}
+  polyline(g,x,y1,w,h1,xmin,xmax,ymin,ymax,pts,C3,2.2);
+  var pp=[];
+  for(i=0;i<=240;i++){var dd=xmin+(xmax-xmin)*i/240;pp.push([dd,Math.cos(2*Math.PI*f*dd)])}
+  polyline(g,x,y1,w,h1,xmin,xmax,ymin,ymax,pp,'#e05a9b',1.3,[4,3]);
+  g.textAlign='left';g.font='11px '+cv('--sans');
+  g.fillStyle=C3;g.fillText('LSF（打分对象）',x+8,y1+14);
+  g.fillStyle='#e05a9b';g.fillText('探针（洋红）',x+120,y1+14);
+  /* 子图2：逐点乘积 */
+  var y2=190,h2=96;
+  frame(g,x,y2,w,h2,[-6,-4,-2,0,2,4,6].map(Number),[0],xmin,xmax,-1.05,1.05);
+  var barW=Math.max(0.8,w/L*0.9),yy=y2+h2/2;
+  for(i=0;i<L;i++){var d2=model.lsfD[i];if(d2<xmin||d2>xmax)continue;
+    var val=model.lsf[i]*lsfN*Math.cos(2*Math.PI*f*d2);
+    var hh=val/1.05*h2/2;
+    g.fillStyle=val>=0?'rgba(99,196,127,.75)':'rgba(224,90,155,.75)';
+    g.fillRect(x+(d2-xmin)/(xmax-xmin)*w-barW/2,val>=0?yy-hh:yy,barW,Math.max(1,Math.abs(hh)));
+  }
+  g.fillStyle=C_INK2;g.textAlign='center';
+  g.fillText('逐点乘积 LSF×探针：绿=正贡献 红=负贡献',x+w/2,y2-5);
+  /* 子图3：得分长成 MTF */
+  var y3=308,h3=106;
+  frame(g,x,y3,w,h3,[0,0.1,0.2,0.3,0.4,0.5,0.6].map(Number),[0,0.5,1],0,0.62,0,1.12);
+  var theo=[];
+  for(i=0;i<=120;i++){var ff=0.62*i/120;theo.push([ff,Math.exp(-2*Math.PI*Math.PI*model.sig*model.sig*ff*ff)])}
+  polyline(g,x,y3,w,h3,0,0.62,0,1.12,theo,'#8a97a8',1.2,[5,4]);
+  g.save();g.strokeStyle=C4;g.setLineDash([5,4]);g.globalAlpha=.5;
+  g.beginPath();g.moveTo(x,y3+h3-0.5/1.12*h3);g.lineTo(x+w,y3+h3-0.5/1.12*h3);g.stroke();g.restore();
+  g.save();g.strokeStyle='#7d8ea3';g.setLineDash([3,3]);
+  var nx=x+0.5/0.62*w;g.beginPath();g.moveTo(nx,y3);g.lineTo(nx,y3+h3);g.stroke();g.restore();
+  var n=Math.max(1,Math.ceil(f/0.005)),trail=[];
+  for(i=0;i<=n;i++){var fv=f*i/n,s=probeScore(fv);trail.push([fv,s.x0>1e-9?s.abs/s.x0:0])}
+  polyline(g,x,y3,w,h3,0,0.62,0,1.12,trail,C4,2.2);
+  var cur=probeScore(f),curY=cur.x0>1e-9?cur.abs/cur.x0:0;
+  g.fillStyle=C4;g.beginPath();g.arc(x+f/0.62*w,y3+h3-curY/1.12*h3,4,0,6.2832);g.fill();
+  g.fillStyle=C_INK2;g.textAlign='center';
+  g.fillText('得分（绿）连成 MTF，灰虚线=理论',x+w/2,y3-5);
+}
+function drawSnaps(g,x,y,w,h,xmin,xmax,ymin,ymax,mode){
+  if(!snaps.length)return;
+  for(var i=0;i<snaps.length;i++){var s=snaps[i],pts=[],j;
+    if(mode==='esf'){for(j=0;j<s.esf.length;j++)pts.push([(j+0.5)*s.binW-DMAG,s.esf[j]])}
+    else if(mode==='lsf'){for(j=0;j<s.lsf.length;j++)pts.push([s.lsfD[j],s.lsf[j]])}
+    else{for(j=0;j<s.mf.length;j++)if(s.mf[j]<=0.62)pts.push([s.mf[j],s.mtf[j]])}
+    g.save();g.globalAlpha=.8;
+    polyline(g,x,y,w,h,xmin,xmax,ymin,ymax,pts,s.color,1.4,[6,4]);
+    g.restore();
+  }
+}
+function drawEsf(){
+  var el=$('cv-esf'),P=prep(el),g=P.g,W=P.w,H=P.h;
+  var mL=52,mT=14,mR=14,mB=40,x=mL,y=mT,w=W-mL-mR,h=H-mT-mB;
+  var xmin=-8,xmax=8,ymin=-0.08,ymax=1.08;
+  frame(g,x,y,w,h,[-8,-6,-4,-2,0,2,4,6,8].map(Number),[0,0.25,0.5,0.75,1],xmin,xmax,ymin,ymax);
+  g.fillStyle=C_INK2;g.font='11px '+cv('--sans');g.textAlign='center';
+  g.fillText('到边缘中心的距离 d（像素）',x+w/2,y+h+30);
+  g.save();g.translate(14,y+h/2);g.rotate(-Math.PI/2);g.fillText('归一化亮度',0,0);g.restore();
+  if(model.over>0.25||model.under>0.25){
+    g.fillStyle='#e05a9b';g.font='10.5px '+cv('--mono');g.textAlign='right';
+    g.fillText('过冲 +'+model.over.toFixed(2)+'% / 欠冲 '+model.under.toFixed(2)+'%',x+w-6,y+14);
+  }
+  /* 理论 */
+  var theo=[];for(var i=0;i<=200;i++){var d=-8+16*i/200;theo.push([d,Phi(d/model.sig)])}
+  polyline(g,x,y,w,h,xmin,xmax,ymin,ymax,theo,'#8a97a8',1.5,[5,4]);
+  /* 单行参考点（灰空心） */
+  var sr=state.row, single=[];
+  for(var c=0;c<COLS;c++){var d=c-model.xhalf[sr];
+    if(Math.abs(d)<=DMAG)single.push([d,model.norm[sr][c]])}
+  dots(g,x,y,w,h,xmin,xmax,ymin,ymax,single,'#7d8ea3',3.2,true,0.9);
+  /* 点云（抽样绘制，防卡） */
+  var step=model.pts.length>3000?3:1,cloud=[];
+  for(i=0;i<model.pts.length;i+=step)cloud.push(model.pts[i]);
+  dots(g,x,y,w,h,xmin,xmax,ymin,ymax,cloud,'rgba(62,198,224,.5)',1.7,false,.55);
+  /* ESF 分箱曲线 */
+  var curve=[];
+  for(i=0;i<model.nb;i++)curve.push([(i+0.5)*model.binW-DMAG,model.esf[i]]);
+  polyline(g,x,y,w,h,xmin,xmax,ymin,ymax,curve,C2,2.6);
+  drawSnaps(g,x,y,w,h,xmin,xmax,ymin,ymax,'esf');
+  g.fillStyle=C2;g.font='12px '+cv('--sans');g.textAlign='left';
+  g.fillText('ESF（bin='+model.binW.toFixed(4)+' px）',x+10,y+18);
+  g.fillStyle='#7d8ea3';
+  g.fillText('○ 单行 1px 间隔',x+10,y+36);
+  g.fillStyle=C_INK2;g.textAlign='right';
+  g.fillText('黑虚线 = 理论 Φ(d/σ)',x+w,y+18);
+}
+function drawLsf(){
+  var el=$('cv-lsf'),P=prep(el),g=P.g,W=P.w,H=P.h;
+  var mL=52,mT=14,mR=14,mB=40,x=mL,y=mT,w=W-mL-mR,h=H-mT-mB;
+  var xmin=-6,xmax=6;
+  var lmax=model.lmax||1e-6, ymax=Math.max(1.15, lmax*1.25/(lmax?lmax:1)*1);
+  /* 归一到峰=1 显示 */
+  var esfCurve=[],i;
+  for(i=0;i<model.nb;i++)esfCurve.push([(i+0.5)*model.binW-DMAG,model.esf[i]]);
+  var ymin=-0.35, ytop=1.15;
+  frame(g,x,y,w,h,[-6,-4,-2,0,2,4,6].map(Number),[0,0.5,1],xmin,xmax,ymin,ytop);
+  g.fillStyle=C_INK2;g.font='11px '+cv('--sans');g.textAlign='center';
+  g.fillText('到边缘中心的距离 d（像素）',x+w/2,y+h+30);
+  /* ESF 淡青（缩放到 0~0.5 显示高度，避免与 LSF 混淆） */
+  var esfDisp=esfCurve.map(function(p){return [p[0],p[1]*0.45-0.05]});
+  polyline(g,x,y,w,h,xmin,xmax,ymin,ytop,esfDisp,'rgba(62,198,224,.45)',1.6);
+  /* 理论 LSF */
+  var theo=[];for(i=0;i<=200;i++){var d=-6+12*i/200;theo.push([d,Math.exp(-d*d/(2*model.sig*model.sig))])}
+  polyline(g,x,y,w,h,xmin,xmax,ymin,ytop,theo,'#8a97a8',1.5,[5,4]);
+  /* LSF 归一峰=1 */
+  var disp=[];
+  for(i=0;i<model.lsf.length;i++)disp.push([model.lsfD[i],model.lsf[i]/lmax]);
+  polyline(g,x,y,w,h,xmin,xmax,ymin,ytop,disp,C3,2.6);
+  drawSnaps(g,x,y,w,h,xmin,xmax,ymin,ytop,'lsf');
+  g.fillStyle=C3;g.font='12px '+cv('--sans');g.textAlign='left';
+  g.fillText('LSF = ΔESF（峰归一）',x+10,y+18);
+  g.fillStyle='rgba(62,198,224,.8)';
+  g.fillText('ESF（缩放对照）',x+10,y+36);
+  g.fillStyle=C_INK2;g.textAlign='right';
+  g.fillText('黑虚线 = 理论高斯',x+w,y+18);
+}
+function drawMtf(){
+  var el=$('cv-mtf'),P=prep(el),g=P.g,W=P.w,H=P.h;
+  var mL=52,mT=14,mR=14,mB=40,x=mL,y=mT,w=W-mL-mR,h=H-mT-mB;
+  var xmin=0,xmax=0.62,ymin=0,ymax=1.12;
+  frame(g,x,y,w,h,[0,0.1,0.2,0.3,0.4,0.5,0.6].map(Number),[0,0.25,0.5,0.75,1],xmin,xmax,ymin,ymax);
+  g.fillStyle=C_INK2;g.font='11px '+cv('--sans');g.textAlign='center';
+  g.fillText('空间频率 f（cycle / pixel）',x+w/2,y+h+30);
+  g.save();g.translate(14,y+h/2);g.rotate(-Math.PI/2);g.fillText('MTF',0,0);g.restore();
+  /* 理论 */
+  var theo=[];for(var i=0;i<=160;i++){var f=0.62*i/160;theo.push([f,Math.exp(-2*Math.PI*Math.PI*model.sig*model.sig*f*f)])}
+  polyline(g,x,y,w,h,xmin,xmax,ymin,ymax,theo,'#8a97a8',1.5,[5,4]);
+  /* 0.5 线 */
+  g.save();g.strokeStyle=C4;g.setLineDash([6,5]);g.globalAlpha=.55;
+  g.beginPath();g.moveTo(x,y+h-0.5/ymax*h);g.lineTo(x+w,y+h-0.5/ymax*h);g.stroke();g.restore();
+  /* Nyquist */
+  var nx=x+(0.5-xmin)/(xmax-xmin)*w;
+  g.save();g.strokeStyle='#7d8ea3';g.setLineDash([4,4]);
+  g.beginPath();g.moveTo(nx,y);g.lineTo(nx,y+h);g.stroke();g.restore();
+  g.fillStyle='#7d8ea3';g.font='10.5px '+cv('--mono');g.textAlign='center';
+  g.fillText('Nyquist 0.5',nx,y-2);
+  /* MTF 曲线 */
+  var curve=[];for(i=0;i<model.mf.length;i++)curve.push([model.mf[i],model.mtf[i]]);
+  polyline(g,x,y,w,h,xmin,xmax,ymin,ymax,curve,C4,2.6);
+  drawSnaps(g,x,y,w,h,xmin,xmax,ymin,ymax,'mtf');
+  for(i=0;i<snaps.length;i++){var sp=snaps[i];
+    if(sp.m50!==null){g.fillStyle=sp.color;g.font='11px '+cv('--mono');g.textAlign='right';
+      g.fillText('对比'+(i+1)+'：'+sp.m50.toFixed(3),x+w-4,y+16+i*15)}}
+  /* MTF50 交点标注 */
+  if(model.m50!==null){
+    var mx=x+(model.m50-xmin)/(xmax-xmin)*w, my=y+h-0.5/ymax*h;
+    g.fillStyle=C4;g.beginPath();g.arc(mx,my,4.5,0,6.2832);g.fill();
+    g.fillStyle=C_INK;g.font='12px '+cv('--mono');g.textAlign='left';
+    g.fillText('MTF50='+model.m50.toFixed(3),Math.min(mx+8,x+w-110),my-10);
+  }
+  g.fillStyle=C4;g.font='12px '+cv('--sans');g.textAlign='left';
+  g.fillText('MTF（算法输出）',x+10,y+18);
+  g.fillStyle=C_INK2;g.textAlign='right';
+  g.fillText('黑虚线 = 理论 exp(−2π²σ²f²)',x+w,y+18);
+}
+
+/* ───────── 表格 ───────── */
+function fillRowTable(){
+  var r=state.row, xc=model.xhalf[r], tb=$('tb-row'), html='';
+  var c0=Math.max(0,Math.floor(xc-6.5)), c1=Math.min(COLS-1,Math.ceil(xc+6.5));
+  for(var c=c0;c<=c1;c++){
+    var d=c-xc, v=model.norm[r][c];
+    var cls=Math.abs(d)<0.5?' class="hl"':'';
+    html+='<tr'+cls+'><td>'+c+'</td><td>'+Math.round(model.img[r][c])+'</td><td>'+v.toFixed(3)+'</td><td>'+(d>=0?'+':'')+d.toFixed(2)+'</td></tr>';
+  }
+  tb.innerHTML=html;
+  $('cap-row').textContent='选中行 r='+r+'：黑基准 '+model.blk[r].toFixed(1)+' · 白基准 '+model.wht[r].toFixed(1)+' · 交点 x_c = '+xc.toFixed(3);
+  $('row-label').textContent='第 '+(r+1)+' / '+ROWS+' 行 · 交点 x = '+xc.toFixed(3);
+}
+function fillBinTable(){
+  /* 取 ESF 值在 0.15~0.85 的中段 6 个 bin，均匀抽 */
+  var mid=[];
+  for(var i=0;i<model.nb;i++){var v=model.esf[i]; if(v>0.12&&v<0.88)mid.push(i)}
+  var html='', take=6, st=Math.max(1,Math.floor(mid.length/take));
+  for(var j=0;j<mid.length&&take>0;j+=st,take--){
+    i=mid[j];
+    var d0=(i*model.binW-DMAG), d1=d0+model.binW;
+    html+='<tr><td>['+d0.toFixed(2)+', '+d1.toFixed(2)+')</td><td>'+model.binCnt[i]+'</td><td>'+model.esf[i].toFixed(4)+'</td></tr>';
+  }
+  $('tb-bin').innerHTML=html;
+}
+function fillDiffTable(){
+  /* 峰值附近 6 个 bin */
+  var pk=0;for(var i=1;i<model.lsf.length;i++)if(model.lsf[i]>model.lsf[pk])pk=i;
+  var html='', s=Math.max(pk-3,0), e=Math.min(model.lsf.length-1,s+5);
+  for(i=s;i<=e;i++){
+    html+='<tr><td>'+(model.lsfD[i]>=0?'+':'')+model.lsfD[i].toFixed(2)+'</td><td>'+model.esf[i].toFixed(4)+'</td><td>'+model.esf[i+1].toFixed(4)+'</td><td class="hl">'+model.lsf[i].toFixed(4)+'</td></tr>';
+  }
+  $('tb-diff').innerHTML=html;
+}
+
+/* ───────── 全局刷新 ───────── */
+function refresh(){
+  compute();
+  $('v-theta').textContent=state.theta.toFixed(1)+'°';
+  $('v-sigma').textContent=state.sigma.toFixed(2)+' px';
+  $('v-noise').textContent=state.noise.toFixed(1)+' LSB';
+  $('v-sharp').textContent=(state.sharp||0).toFixed(2);
+  var th=tanT();
+  $('b-tan').textContent=th.toFixed(4);
+  $('b-osf').textContent=model.degenerate?'∞（退化）':(1/th).toFixed(1)+'×';
+  $('b-bin').textContent=model.binW.toFixed(4)+' px';
+  $('b-pts').textContent=model.ptsCount;
+  $('b-mtf50').textContent=model.m50===null?'—':model.m50.toFixed(3)+' cy/px';
+  $('b-mtf50t').textContent=model.m50t.toFixed(3)+' cy/px';
+  $('b-ov').textContent='+'+model.over.toFixed(2)+'% / −'+model.under.toFixed(2)+'%';
+  $('pipe-mtf50').textContent=model.m50===null?'—':model.m50.toFixed(3);
+  $('pipe-lwph').textContent=model.m50===null?'LW/PH —':'LW/PH ≈ '+Math.round(model.m50*2*3840);
+  $('td-mtf50').textContent=model.m50===null?'—':model.m50.toFixed(3)+' cy/px';
+  $('td-mtf50t').textContent=model.m50t.toFixed(3)+' cy/px';
+  $('td-lwph').textContent=model.m50===null?'—':Math.round(model.m50*2*3840)+' LW/PH';
+  $('td-fres').textContent=model.fres.toExponential(2)+' cy/px';
+  drawImage();drawEsf();drawLsf();drawMtf();drawProbe();updateProbeRead();drawArrow();updateArrowRead();drawStripe();
+  fillRowTable();fillBinTable();fillDiffTable();
+  var deg=$('b-osf');
+  deg.style.color=model.degenerate?'#f08c3a':'';
+}
+
+/* ───────── 事件 ───────── */
+$('in-theta').addEventListener('input',function(){state.theta=parseFloat(this.value);refresh()});
+$('in-sigma').addEventListener('input',function(){state.sigma=parseFloat(this.value);refresh()});
+$('in-noise').addEventListener('input',function(){state.noise=parseFloat(this.value);refresh()});
+$('in-sharp').addEventListener('input',function(){state.sharp=parseFloat(this.value);refresh()});
+$('btn-seed').addEventListener('click',function(){state.seed=(state.seed*31+11)%9973;refresh()});
+$('btn-row-up').addEventListener('click',function(){state.row=Math.min(ROWS-1,state.row+1);refresh()});
+$('btn-row-down').addEventListener('click',function(){state.row=Math.max(0,state.row-1);refresh()});
+$('cv-img').addEventListener('click',function(e){
+  var rect=this.getBoundingClientRect();
+  var y=e.clientY-rect.top, mT=8, mB=26, h=rect.height-mT-mB;
+  var r=Math.floor((y-mT)/h*ROWS);
+  if(r>=0&&r<ROWS){state.row=r;refresh()}
+});
+/* 页内导航拦截 */
+var reduced=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+document.querySelectorAll('nav.steps a[href^="#"]').forEach(function(a){
+  a.addEventListener('click',function(e){
+    if(this.getAttribute('href')==='#console'&&window.matchMedia('(max-width:1080px)').matches){e.preventDefault();setConsole(true);return}
+    var t=document.querySelector(this.getAttribute('href'));
+    if(t){e.preventDefault();t.scrollIntoView({behavior:reduced?'auto':'smooth',block:'start'})}
+  });
+});
+/* ───────── 快照对比 ───────── */
+function renderChips(){
+  var box=$('snap-chips');
+  if(!snaps.length){box.innerHTML='';box.style.display='none';return}
+  box.style.display='flex';
+  box.innerHTML=snaps.map(function(s,i){
+    return '<span class="snap-chip"><span class="dot" style="background:'+s.color+'"></span><span>θ='+s.theta.toFixed(1)+'° σ='+s.sigma.toFixed(2)+' 噪='+s.noise.toFixed(1)+'<br>MTF50 <b>'+(s.m50===null?'—':s.m50.toFixed(3))+'</b></span><button type="button" data-i="'+i+'" aria-label="删除该对比">✕</button></span>';
+  }).join('');
+}
+$('btn-snap').addEventListener('click',function(){
+  if(snaps.length>=4)snaps.shift();
+  snaps.push({theta:state.theta,sigma:state.sigma,noise:state.noise,seed:state.seed,m50:model.m50,binW:model.binW,
+    esf:model.esf.slice(),lsfD:model.lsfD.slice(),lsf:model.lsf.slice(),mf:model.mf.slice(),mtf:model.mtf.slice(),
+    color:SNAP_COLORS[snaps.length]});
+  renderChips();drawEsf();drawLsf();drawMtf();
+});
+$('btn-clear-snaps').addEventListener('click',function(){snaps=[];renderChips();drawEsf();drawLsf();drawMtf()});
+$('snap-chips').addEventListener('click',function(e){
+  var t=e.target,i=t&&t.getAttribute?t.getAttribute('data-i'):null;
+  if(i!==null&&i!==undefined){snaps.splice(parseInt(i,10),1);renderChips();drawEsf();drawLsf();drawMtf()}
+});
+/* ───────── 箭头合成证明交互 ───────── */
+$('in-arrow-f').addEventListener('input',function(){state.arrowF=parseFloat(this.value);updateArrowRead();drawArrow();drawStripe()});
+
+/* ───────── 探针对暗号交互 ───────── */
+$('in-probe-f').addEventListener('input',function(){state.probeF=parseFloat(this.value);updateProbeRead();drawProbe()});
+var scanning=false;
+$('btn-scan').addEventListener('click',function(){
+  if(scanning)return;
+  if(reduced){state.probeF=0.62;$('in-probe-f').value='0.62';updateProbeRead();drawProbe();return}
+  scanning=true;
+  var t0=performance.now?performance.now():Date.now();
+  function scanStep(now){
+    var t=(now-t0)/2800;
+    if(t>=1){scanning=false;state.probeF=0.62;$('in-probe-f').value='0.62';updateProbeRead();drawProbe();return}
+    state.probeF=0.62*t;
+    $('in-probe-f').value=String(state.probeF);
+    updateProbeRead();drawProbe();
+    requestAnimationFrame(scanStep);
+  }
+  requestAnimationFrame(scanStep);
+});
+
+/* ───────── 控制台折叠 / 窄屏抽屉 ───────── */
+function drawerMode(){return window.matchMedia('(max-width:1080px)').matches}
+function consoleShown(){return drawerMode()?document.body.classList.contains('drawer-open'):!document.body.classList.contains('console-collapsed')}
+function setConsole(open){
+  if(drawerMode())document.body.classList.toggle('drawer-open',!!open);
+  else document.body.classList.toggle('console-collapsed',!open);
+  $('btn-console').setAttribute('aria-expanded',open?'true':'false');
+}
+$('btn-console').addEventListener('click',function(){setConsole(!consoleShown())});
+$('btn-drawer-close').addEventListener('click',function(){setConsole(false)});
+$('drawer-mask').addEventListener('click',function(){setConsole(false)});
+window.addEventListener('keydown',function(e){if(e.key==='Escape'&&drawerMode())setConsole(false)});
+var rT=null;
+window.addEventListener('resize',function(){
+  clearTimeout(rT);rT=setTimeout(function(){
+    if(window.innerWidth>1080)document.body.classList.remove('drawer-open');
+    refresh();
+  },180);
+});
+refresh();
+}catch(err){
+  var box=document.createElement('div');
+  box.style.cssText='background:#3a2b18;border:1px solid #6b5426;color:#f0d9ac;border-radius:8px;padding:12px 16px;margin:14px 0;font-size:14px';
+  box.textContent='交互演示初始化失败：'+err.message+'。上方文字讲解仍可阅读。';
+  var main=document.querySelector('.console');
+  if(main&&main.parentNode)main.parentNode.insertBefore(box,main);
+}
+})();
+</script>
+</body>
+</html>
