@@ -30,5 +30,69 @@ const { title, description } = Astro.props;
       <slot />
     </main>
     <Footer />
+    <script>
+      // 代码块增强：给 .prose 内的 <pre> 加语言标签和复制按钮
+      function fallbackCopy(text: string) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+          document.execCommand('copy');
+        } catch {
+          /* 忽略 */
+        }
+        ta.remove();
+      }
+
+      function enhanceCodeBlocks() {
+        document.querySelectorAll('.prose pre').forEach((pre) => {
+          if (pre.hasAttribute('data-enhanced')) return;
+          pre.setAttribute('data-enhanced', '1');
+
+          const lang =
+            pre.getAttribute('data-language') ||
+            pre.querySelector('code')?.className.match(/language-([\w-]+)/)?.[1] ||
+            '';
+
+          const wrapper = document.createElement('div');
+          wrapper.className = 'code-block';
+
+          const header = document.createElement('div');
+          header.className = 'code-block-header';
+
+          const label = document.createElement('span');
+          label.className = 'code-lang';
+          label.textContent = lang || 'text';
+
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'copy-btn';
+          btn.textContent = '复制';
+          btn.addEventListener('click', async () => {
+            const text = pre.querySelector('code')?.innerText ?? pre.innerText ?? '';
+            try {
+              await navigator.clipboard.writeText(text);
+            } catch {
+              fallbackCopy(text);
+            }
+            btn.textContent = '已复制 ✓';
+            btn.classList.add('copied');
+            setTimeout(() => {
+              btn.textContent = '复制';
+              btn.classList.remove('copied');
+            }, 1600);
+          });
+
+          header.append(label, btn);
+          pre.parentNode?.insertBefore(wrapper, pre);
+          wrapper.append(header, pre);
+        });
+      }
+
+      enhanceCodeBlocks();
+    </script>
   </body>
 </html>

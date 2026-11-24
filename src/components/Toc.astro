@@ -1,0 +1,76 @@
+---
+import type { MarkdownHeading } from 'astro';
+
+interface Props {
+  headings: MarkdownHeading[];
+}
+
+const { headings } = Astro.props;
+const items = headings.filter((h) => h.depth === 2 || h.depth === 3);
+---
+
+{items.length > 0 && (
+  <div class="toc" id="toc">
+    <button type="button" class="toc-toggle" id="toc-toggle" aria-expanded="false">
+      📑 目录
+    </button>
+    <nav class="toc-panel" id="toc-panel" aria-label="文章目录">
+      <ul>
+        {items.map((h) => (
+          <li class={`toc-item toc-h${h.depth}`}>
+            <a href={`#${h.slug}`}>{h.text}</a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  </div>
+)}
+
+<script>
+  const toc = document.getElementById('toc');
+
+  if (toc) {
+    const btn = document.getElementById('toc-toggle')!;
+    const panel = document.getElementById('toc-panel')!;
+
+    const isNarrow = () => window.innerWidth <= 1180;
+    const setExpanded = (v: boolean) => {
+      toc.classList.toggle('expanded', v);
+      btn.setAttribute('aria-expanded', String(v));
+    };
+
+    // 桌面端默认展开、窄屏默认收起；跨越断点时自动复位
+    let wasNarrow = isNarrow();
+    setExpanded(!wasNarrow);
+    window.addEventListener('resize', () => {
+      const nowNarrow = isNarrow();
+      if (nowNarrow !== wasNarrow) {
+        wasNarrow = nowNarrow;
+        setExpanded(!nowNarrow);
+      }
+    });
+
+    btn.addEventListener('click', () => {
+      setExpanded(!toc.classList.contains('expanded'));
+    });
+
+    // 滚动高亮当前章节
+    const links = Array.from(panel.querySelectorAll<HTMLAnchorElement>('a'));
+    const byId = new Map(links.map((a) => [a.getAttribute('href')!.slice(1), a]));
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            links.forEach((a) => a.classList.remove('active'));
+            byId.get(entry.target.id)?.classList.add('active');
+          }
+        }
+      },
+      { rootMargin: '-80px 0px -65% 0px' },
+    );
+    byId.forEach((_a, id) => {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    });
+  }
+</script>
