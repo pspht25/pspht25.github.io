@@ -27,7 +27,10 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   </div>
 
   <div class="editor">
-    <textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Python 代码"></textarea>
+    <div class="hl-wrap">
+      <pre class="hl" id="hl" aria-hidden="true"><code></code></pre>
+      <textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Python 代码"></textarea>
+    </div>
   </div>
 
   <div class="toolbar">
@@ -202,7 +205,36 @@ self.onmessage = async (ev) => {
   .pkg.loaded { border-color: #16a34a; color: #16a34a; background: rgba(22,163,74,.08); }
   .pkg-hint { color: var(--fg-muted); font-size: 0.78rem; }
 
+  /* 高亮编辑器：透明 textarea 叠在高亮 pre 上 */
+  .hl-wrap {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--bg-soft);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+  .hl-wrap:focus-within { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  .hl-wrap pre.hl {
+    position: absolute;
+    inset: 0;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 14px 16px;
+    font-family: var(--font-mono);
+    font-size: 0.92rem;
+    line-height: 1.6;
+    tab-size: 4;
+    color: var(--fg);
+    pointer-events: none;
+    overflow: hidden;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  pre.hl code { font: inherit; }
   .editor textarea {
+    position: relative;
+    display: block;
     width: 100%;
     min-height: 240px;
     resize: vertical;
@@ -210,13 +242,20 @@ self.onmessage = async (ev) => {
     font-size: 0.92rem;
     line-height: 1.6;
     padding: 14px 16px;
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    background: var(--bg-soft);
-    color: var(--fg);
+    border: none;
+    background: transparent;
+    color: transparent;
+    caret-color: var(--fg);
     tab-size: 4;
+    box-sizing: border-box;
   }
-  .editor textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  .editor textarea:focus { outline: none; }
+  .tok-kw { color: #8b5cf6; font-weight: 600; }
+  .tok-str { color: #b45309; }
+  .tok-com { color: var(--fg-muted); font-style: italic; }
+  .tok-num { color: #0284c7; }
+  .tok-bi { color: #0d9488; }
+  .tok-cl { color: #db2777; }
 
   .toolbar {
     display: flex; align-items: center; gap: 8px;
@@ -292,8 +331,77 @@ self.onmessage = async (ev) => {
   let pendingRun: string | null = null;
   let worker: Worker | null = null;
 
-  // 引擎自托管路径（随站点 base 自动适配）
-  const INDEX_URL = (import.meta.env.BASE_URL ?? '/').replace(/\/?$/, '/') + 'vendor/pyodide/v0.29.2/';
+  // 引擎自托管路径（随站点 base 自动适配）。
+  // 关键：Worker 由 Blob URL 创建，importScripts/loadPyodide 里的相对路径会以 blob: 为 base
+  // 解析而失效，因此这里必须解析为完整绝对 URL 再传给 Worker。
+  const INDEX_URL = new URL(
+    (import.meta.env.BASE_URL ?? '/').replace(/\/?$/, '/') + 'vendor/pyodide/v0.29.2/',
+    document.baseURI
+  ).href;
+
+  // ---------- 轻量 Python 语法高亮（零依赖，逐行 tokenizer） ----------
+  const KW = new Set('def return if elif else for while import from as with try except finally class in not and or lambda None True False await async yield global nonlocal assert break continue pass raise del is match case'.split(' '));
+  const BUILTIN = new Set('print len range int float str list dict set tuple sum min max abs round sorted enumerate zip map filter open type isinstance super bool bytes repr format any all hex oct bin divmod pow iter next getattr setattr hasattr'.split(' '));
+  const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  function hlPython(src: string): string {
+    const out: string[] = [];
+    for (const line of src.split('\n')) {
+      let html = '';
+      let i = 0;
+      const n = line.length;
+      while (i < n) {
+        const c = line[i]!;
+        if (c === '#') {
+          html += '<span class="tok-com">' + escHtml(line.slice(i)) + '</span>';
+          break;
+        }
+        // 字符串（含 f/r/b/u 前缀；未闭合引号则着色到行尾）
+        const sm = line.slice(i).match(/^[A-Za-z]{0,2}("""|'''|"|')/);
+        if (sm && sm[0] && !/[\w.]/.test(line[i - 1] ?? '')) {
+          const q = sm[1]!;
+          const end = line.indexOf(q, i + sm[0].length);
+          const stop = end === -1 ? n : end + q.length;
+          html += '<span class="tok-str">' + escHtml(line.slice(i, stop)) + '</span>';
+          i = stop;
+          continue;
+        }
+        // 数字（避免吃进标识符）
+        if (/[0-9]/.test(c) && !/[\w.]/.test(line[i - 1] ?? '')) {
+          const nm = line.slice(i).match(/^0[xXbBoO][\da-fA-F_]+|\d[\d_]*(\.\d[\d_]*)?([eE][+-]?\d+)?[jJ]?/);
+          if (nm) {
+            html += '<span class="tok-num">' + escHtml(nm[0]) + '</span>';
+            i += nm[0].length;
+            continue;
+          }
+        }
+        // 标识符 / 关键字 / 内建 / 类名
+        const im = line.slice(i).match(/^[A-Za-z_]\w*/);
+        if (im) {
+          const w = im[0];
+          const cls = KW.has(w) ? 'tok-kw' : BUILTIN.has(w) ? 'tok-bi' : /^[A-Z][A-Za-z0-9_]*$/.test(w) ? 'tok-cl' : '';
+          html += cls ? '<span class="' + cls + '">' + escHtml(w) + '</span>' : escHtml(w);
+          i += w.length;
+          continue;
+        }
+        html += escHtml(c);
+        i++;
+      }
+      out.push(html);
+    }
+    return out.join('\n');
+  }
+
+  const hlEl = document.getElementById('hl') as HTMLElement;
+  const hlCode = hlEl.querySelector('code') as HTMLElement;
+  function syncHl() {
+    hlCode.innerHTML = hlPython(codeEl.value) + '\n';
+  }
+  codeEl.addEventListener('input', syncHl);
+  codeEl.addEventListener('scroll', () => {
+    hlEl.scrollTop = codeEl.scrollTop;
+    hlEl.scrollLeft = codeEl.scrollLeft;
+  });
 
   const DEMOS: Record<string, string> = {
     basic: `# 纯 Python：斐波那契与无限精度整数
@@ -473,6 +581,7 @@ print("图已通过 plt.show() 输出")`,
   document.querySelectorAll<HTMLButtonElement>('.demo').forEach((b) => {
     b.addEventListener('click', () => {
       codeEl.value = DEMOS[b.dataset.demo ?? 'basic'] ?? '';
+      syncHl();
       runOrQueue();
     });
   });
@@ -511,5 +620,6 @@ print("图已通过 plt.show() 输出")`,
   });
 
   codeEl.value = DEMOS.basic;
+  syncHl();
   spawnWorker();
 </script>

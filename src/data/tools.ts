@@ -24,6 +24,13 @@ export const tools: ToolCard[] = [
     ready: true,
   },
   {
+    title: 'Python 笔记本',
+    description: '类 Jupyter 的科学计算笔记本：单元格制、变量跨格共享、Out[n] 显示表达式结果、matplotlib 内联，支持顶层 await',
+    path: '/tools/python-notebook/',
+    emoji: '🧪',
+    ready: true,
+  },
+  {
     title: '正则测试器',
     description: '实时匹配高亮与分组捕获',
     path: '/tools/regex/',
