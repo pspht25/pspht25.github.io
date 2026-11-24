@@ -1,0 +1,33 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { tools } from '../../data/tools';
+---
+
+<BaseLayout title="工具箱">
+  <h1>工具箱</h1>
+  <p class="page-desc">
+    纯前端小工具，即开即用。工具注册表在 <code>src/data/tools.ts</code>：加一个新工具 = 新建一个页面 + 一行注册。
+  </p>
+  <div class="card-grid">
+    {tools.map((tool) =>
+      tool.ready ? (
+        <a class="card" href={tool.path}>
+          <span class="card-emoji">{tool.emoji}</span>
+          <span class="card-title">{tool.title}</span>
+          <span class="card-desc">{tool.description}</span>
+        </a>
+      ) : (
+        <div class="card card-disabled">
+          <span class="card-emoji">{tool.emoji}</span>
+          <span class="card-title">{tool.title}</span>
+          <span class="card-desc">{tool.description}（待建）</span>
+        </div>
+      ),
+    )}
+    <div class="card card-disabled">
+      <span class="card-emoji">🚧</span>
+      <span class="card-title">更多工具施工中</span>
+      <span class="card-desc">想要什么工具随时提需求</span>
+    </div>
+  </div>
+</BaseLayout>

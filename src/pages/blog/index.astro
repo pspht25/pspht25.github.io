@@ -1,0 +1,28 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import FormattedDate from '../../components/FormattedDate.astro';
+
+const posts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
+);
+---
+
+<BaseLayout title="博客">
+  <h1>博客</h1>
+  <p class="page-desc">随想、记录与折腾过程。</p>
+  <ul class="post-list">
+    {posts.map((post) => (
+      <li>
+        <a href={`/blog/${post.id}/`}>
+          <span class="post-title">{post.data.title}</span>
+          {post.data.description && <span class="post-desc">{post.data.description}</span>}
+          <span class="post-meta">
+            <FormattedDate date={post.data.pubDate} />
+            {post.data.tags.length > 0 && <span> · {post.data.tags.join(' / ')}</span>}
+          </span>
+        </a>
+      </li>
+    ))}
+  </ul>
+</BaseLayout>

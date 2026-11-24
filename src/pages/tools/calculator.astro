@@ -1,0 +1,310 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="计算器" description="支持四则运算、括号、百分号与键盘输入的网页计算器">
+  <h1>🧮 计算器</h1>
+  <div class="calc">
+    <div class="calc-screen">
+      <div id="calc-expr" class="calc-expr">&nbsp;</div>
+      <div id="calc-result" class="calc-result">0</div>
+    </div>
+
+    <div class="calc-keys">
+      <button class="key fn" data-key="C">C</button>
+      <button class="key fn" data-key="(">(</button>
+      <button class="key fn" data-key=")">)</button>
+      <button class="key fn" data-key="back">⌫</button>
+
+      <button class="key" data-key="7">7</button>
+      <button class="key" data-key="8">8</button>
+      <button class="key" data-key="9">9</button>
+      <button class="key op" data-key="/">÷</button>
+
+      <button class="key" data-key="4">4</button>
+      <button class="key" data-key="5">5</button>
+      <button class="key" data-key="6">6</button>
+      <button class="key op" data-key="*">×</button>
+
+      <button class="key" data-key="1">1</button>
+      <button class="key" data-key="2">2</button>
+      <button class="key" data-key="3">3</button>
+      <button class="key op" data-key="-">−</button>
+
+      <button class="key" data-key="0">0</button>
+      <button class="key" data-key=".">.</button>
+      <button class="key op" data-key="%">%</button>
+      <button class="key op" data-key="+">+</button>
+
+      <button class="key eq" data-key="=">=</button>
+    </div>
+
+    <div class="calc-history">
+      <h2>历史</h2>
+      <ul id="calc-history"></ul>
+    </div>
+  </div>
+</BaseLayout>
+
+<style>
+  .calc {
+    max-width: 360px;
+    margin: 1.2rem auto 0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: var(--shadow);
+  }
+
+  .calc-screen {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 16px;
+    text-align: right;
+    margin-bottom: 14px;
+    min-height: 76px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: hidden;
+  }
+
+  .calc-expr {
+    color: var(--fg-muted);
+    font-size: 1rem;
+    min-height: 1.4em;
+    word-break: break-all;
+  }
+
+  .calc-result {
+    font-size: 2rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    word-break: break-all;
+  }
+
+  .calc-keys {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+  }
+
+  .key {
+    height: 48px;
+    font-size: 1.15rem;
+    font-family: var(--font-sans);
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--fg);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: filter 0.1s ease, transform 0.05s ease;
+  }
+  .key:hover { filter: brightness(0.96); }
+  .key:active { transform: scale(0.96); }
+
+  .key.fn { background: var(--bg-soft); color: var(--fg-muted); }
+  .key.op { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .key.eq {
+    grid-column: span 4;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 700;
+    height: 52px;
+  }
+
+  .calc-history { margin-top: 18px; }
+  .calc-history h2 { font-size: 1rem; margin: 0 0 6px; color: var(--fg-muted); }
+  .calc-history ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 140px;
+    overflow-y: auto;
+    font-size: 0.88rem;
+    color: var(--fg-muted);
+  }
+  :global(#calc-history li) {
+    padding: 4px 2px;
+    border-bottom: 1px dashed var(--border);
+    font-family: var(--font-mono);
+  }
+  :global(#calc-history li.empty) { border: none; }
+</style>
+
+<script>
+  const exprEl = document.getElementById('calc-expr')!;
+  const resultEl = document.getElementById('calc-result')!;
+  const historyEl = document.getElementById('calc-history')!;
+
+  let expr = '';
+  let justEvaluated = false;
+  let history: string[] = [];
+
+  /** 分词：数字 / 运算符 / 括号 */
+  function tokenize(s: string): (number | string)[] | null {
+    const tokens: (number | string)[] = [];
+    let i = 0;
+    while (i < s.length) {
+      const ch = s[i];
+      if (/[0-9.]/.test(ch)) {
+        let num = '';
+        while (i < s.length && /[0-9.]/.test(s[i])) num += s[i++];
+        if (!/^\d+(\.\d+)?$/.test(num)) return null;
+        tokens.push(parseFloat(num));
+      } else if ('+-*/%()'.includes(ch)) {
+        tokens.push(ch);
+        i++;
+      } else if (ch === ' ') {
+        i++;
+      } else {
+        return null;
+      }
+    }
+    return tokens;
+  }
+
+  /** 调度场算法：中缀 → 逆波兰表达式（支持一元负号） */
+  function toRPN(tokens: (number | string)[]): (number | string)[] | null {
+    const out: (number | string)[] = [];
+    const ops: string[] = [];
+    const prec: Record<string, number> = { '+': 1, '-': 1, '*': 2, '/': 2, '%': 2 };
+    let prev: number | string | null = null;
+    for (const t of tokens) {
+      if (typeof t === 'number') {
+        out.push(t);
+      } else if (t === '(') {
+        ops.push(t);
+      } else if (t === ')') {
+        while (ops.length && ops[ops.length - 1] !== '(') out.push(ops.pop()!);
+        if (!ops.length) return null;
+        ops.pop();
+      } else {
+        if (t === '-' && (prev === null || prev === '(' || (typeof prev === 'string' && prec[prev]))) {
+          out.push(0);
+        }
+        while (ops.length && prec[ops[ops.length - 1]] >= prec[t]) out.push(ops.pop()!);
+        ops.push(t);
+      }
+      prev = t;
+    }
+    while (ops.length) {
+      const op = ops.pop()!;
+      if (op === '(') return null;
+      out.push(op);
+    }
+    return out;
+  }
+
+  /** 逆波兰表达式求值，非法或除零返回 null */
+  function evalRPN(rpn: (number | string)[]): number | null {
+    const st: number[] = [];
+    for (const t of rpn) {
+      if (typeof t === 'number') {
+        st.push(t);
+      } else {
+        const b = st.pop();
+        const a = st.pop();
+        if (a === undefined || b === undefined) return null;
+        let v: number;
+        if (t === '+') v = a + b;
+        else if (t === '-') v = a - b;
+        else if (t === '*') v = a * b;
+        else if (t === '/') v = b === 0 ? NaN : a / b;
+        else v = b === 0 ? NaN : a % b;
+        if (Number.isNaN(v)) return null;
+        st.push(v);
+      }
+    }
+    return st.length === 1 && Number.isFinite(st[0]) ? st[0] : null;
+  }
+
+  function evaluate(e: string): number | null {
+    if (!e) return null;
+    const tokens = tokenize(e);
+    if (!tokens || tokens.length === 0) return null;
+    const rpn = toRPN(tokens);
+    if (!rpn) return null;
+    return evalRPN(rpn);
+  }
+
+  function fmt(n: number): string {
+    if (!Number.isFinite(n)) return '错误';
+    return String(Math.round(n * 1e10) / 1e10);
+  }
+
+  function pretty(s: string): string {
+    return s.replace(/\*/g, '×').replace(/\//g, '÷');
+  }
+
+  function escapeHtml(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function refresh() {
+    exprEl.textContent = expr ? pretty(expr) : '\u00A0';
+    const r = justEvaluated ? null : evaluate(expr);
+    resultEl.textContent = justEvaluated ? fmt(evaluate(expr) ?? 0) : r === null ? '0' : fmt(r);
+  }
+
+  function renderHistory() {
+    const items = history.slice(0, 12);
+    historyEl.innerHTML = items.length
+      ? items.map((h) => `<li>${escapeHtml(pretty(h))}</li>`).join('')
+      : '<li class="empty">还没有计算记录</li>';
+  }
+
+  function press(key: string) {
+    if (key === 'C') {
+      expr = '';
+      justEvaluated = false;
+    } else if (key === 'back') {
+      expr = expr.slice(0, -1);
+      justEvaluated = false;
+    } else if (key === '=') {
+      if (!expr) return;
+      const r = evaluate(expr);
+      if (r === null) {
+        resultEl.textContent = '错误';
+        return;
+      }
+      history.unshift(`${expr} = ${fmt(r)}`);
+      renderHistory();
+      expr = fmt(r);
+      justEvaluated = true;
+    } else if (/^[0-9.]$/.test(key)) {
+      expr = justEvaluated ? key : expr + key;
+      justEvaluated = false;
+    } else {
+      expr += key;
+      justEvaluated = false;
+    }
+    refresh();
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('.calc-keys .key').forEach((btn) => {
+    btn.addEventListener('click', () => press(btn.dataset.key ?? ''));
+  });
+
+  window.addEventListener('keydown', (e) => {
+    const k = e.key;
+    if (/^[0-9.+\-*/%()]$/.test(k)) {
+      press(k);
+      e.preventDefault();
+    } else if (k === 'Enter' || k === '=') {
+      press('=');
+      e.preventDefault();
+    } else if (k === 'Backspace') {
+      press('back');
+      e.preventDefault();
+    } else if (k === 'Escape') {
+      press('C');
+      e.preventDefault();
+    }
+  });
+
+  renderHistory();
+  refresh();
+</script>

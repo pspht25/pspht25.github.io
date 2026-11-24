@@ -1,0 +1,14 @@
+---
+import { SITE_TITLE } from '../consts';
+const year = new Date().getFullYear();
+---
+
+<footer class="site-footer">
+  <div class="container">
+    <p>
+      © {year} {SITE_TITLE} · 由
+      <a href="https://astro.build" target="_blank" rel="noopener">Astro</a>
+      构建 · 托管于 GitHub Pages
+    </p>
+  </div>
+</footer>

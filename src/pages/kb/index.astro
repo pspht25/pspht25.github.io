@@ -1,0 +1,31 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+
+const entries = (await getCollection('kb', ({ data }) => !data.draft)).sort(
+  (a, b) => a.data.order - b.data.order,
+);
+const categories = [...new Set(entries.map((e) => e.data.category))];
+---
+
+<BaseLayout title="知识库">
+  <h1>知识库</h1>
+  <p class="page-desc">结构化的知识笔记，按分类组织。新增一篇 = 在 <code>src/content/kb/</code> 加一个 Markdown 文件。</p>
+  {categories.map((category) => (
+    <section class="home-section">
+      <h2>{category}</h2>
+      <ul class="post-list">
+        {entries
+          .filter((e) => e.data.category === category)
+          .map((entry) => (
+            <li>
+              <a href={`/kb/${entry.id}/`}>
+                <span class="post-title">{entry.data.title}</span>
+                {entry.data.description && <span class="post-desc">{entry.data.description}</span>}
+              </a>
+            </li>
+          ))}
+      </ul>
+    </section>
+  ))}
+</BaseLayout>
