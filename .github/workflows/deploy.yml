@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SITE_PASS: ${{ secrets.SITE_PASS }}
+      CONTENT_KEY: ${{ secrets.CONTENT_KEY }}
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
