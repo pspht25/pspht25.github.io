@@ -145,10 +145,7 @@ if (!PASS) {
   console.log('[encrypt-site] SITE_PASS 未设置，跳过加密（本地预览模式）');
   process.exit(0);
 }
-if (PASS.length < 6) {
-  console.error('[encrypt-site] SITE_PASS 至少 6 位');
-  process.exit(1);
-}
+// 密码强度由用户自行决定，这里不再设长度门槛
 
 const files = walk(DIST);
 let n = 0;
