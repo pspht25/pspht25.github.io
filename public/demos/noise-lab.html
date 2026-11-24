@@ -98,7 +98,7 @@ footer{padding:2rem 0 3rem;text-align:center;color:var(--muted);font-size:.82rem
 <body>
 <nav class="tocbar"><div class="in">
   <a class="back" id="backDemo" href="/demos/">← 演示集</a>
-  <a href="#s1">① 噪声从哪来</a><a href="#s2">② SNR 怎么算</a><a href="#s3">③ 流水线位置</a><a href="#s4">④ 经典降噪</a><a href="#s5">⑤ AI 前沿</a><a href="#s6">⑥ 测验</a><a href="#refs">参考</a>
+  <a href="#s1">① 噪声从哪来</a><a href="#s2">② SNR 怎么算</a><a href="#s3">③ 时域与空域</a><a href="#s4">④ 流水线位置</a><a href="#s5">⑤ 经典降噪</a><a href="#s6">⑥ AI 前沿</a><a href="#s7">⑦ 测验</a><a href="#refs">参考</a>
 </div></nav>
 
 <div class="wrap">
@@ -172,8 +172,53 @@ footer{padding:2rem 0 3rem;text-align:center;color:var(--muted);font-size:.82rem
   </div>
 </section>
 <!-- ============ ③ 流水线 ============ -->
+<!-- ============ ③ 时域与空域 ============ -->
 <section id="s3">
-  <h2>③ ISP 流水线：降噪在"工厂"的哪一站？</h2>
+  <h2>③ 时域与空域：噪声的两个维度</h2>
+  <p>噪声不只分"种类"，还分"维度"。同一场景连拍 100 张：每张内部像素之间互不相同——这是<b>空域噪声</b>；同一个像素位置在 100 张之间上下抖动——这是<b>时域噪声</b>。两个维度都要测 SNR，但<b>算法不同、降噪手段也不同</b>。</p>
+  <div class="grid2">
+    <div class="card">
+      <h3>🧭 空域噪声（Spatial）</h3>
+      <p><b>定义</b>：一次曝光内，像素与像素之间的随机差异。</p>
+      <p><b>来源</b>：散粒/读出噪声逐像素独立产生；<b>FPN</b>（每像素灵敏度差异）则表现为固定的空间分布。</p>
+      <p><b>计算</b>：选一块平坦亮区，看像素值偏离均值的程度——σ<sub class="fallback-sub">space</sub> = 区域内像素的标准差，SNR = 20log₁₀(mean/σ)。<b>横着看一行</b>。</p>
+    </div>
+    <div class="card">
+      <h3>⏱️ 时域噪声（Temporal）</h3>
+      <p><b>定义</b>：同一个像素，跨多帧的随机波动。</p>
+      <p><b>来源</b>：光子到达本身就是随机过程（泊松），读出热噪声每帧独立。</p>
+      <p><b>计算</b>：盯住一个固定像素，看它在 N 帧里的波动——σ<sub class="fallback-sub">time</sub> = 该像素跨帧的标准差。<b>竖着看一列</b>。</p>
+    </div>
+  </div>
+  <div class="card">
+    <h3>💡 对计算方法与降噪策略的影响</h3>
+    <p><b>1 · 正交分解</b>：总噪声² ≈ 时域噪声² + 空域固定分量²。两者近似独立、平方相加——工业界传感器测量标准 <b>EMVA 1288</b> 明确要求把两者分开测定。</p>
+    <p><b>2 · FPN 在时域上是"死"的</b>：固定模式噪声每帧都一模一样，<b>多帧平均对它完全无效</b>——√N 红利只属于"每帧独立"的随机噪声。杀掉 FPN 只有两条路：<b>标定扣除</b>（暗帧/平场校正）或<b>空域滤波</b>（靠邻域互相抵消）。</p>
+    <p><b>3 · 降噪策略映射</b>：时域降噪（多帧平均 / 视频 TNR）<b>不损空间分辨率</b>，但运动区域要防鬼影；空域降噪（单帧滤波）不动时间轴，但要<b>牺牲细节</b>。手机拍照 = 时域多帧 + 空域 AI 双管齐下。</p>
+  </div>
+  <div class="card">
+    <h3>🧪 亲手测两种 σ（64 像素平坦亮区 × 16 帧）</h3>
+    <p class="note">上图是空域视角：一行 64 个像素的亮度剖面。试试开关：多帧平均能杀死随机噪声，但<b>杀不死 FPN</b>。</p>
+    <div class="btns">
+      <button id="fpnBtn">FPN 固定模式噪声：关</button>
+      <button id="avgBtn">16 帧平均：关</button>
+      <button id="regenBtn">🎲 重新采样</button>
+    </div>
+    <canvas class="chart" id="cvSpace" width="620" height="130"></canvas>
+    <p class="note">下图是时域视角：中心像素跨 16 帧的时间序列。灰色细线 = 原始波动；打开平均后，蓝点 = 每 4 帧一组平均的结果。</p>
+    <canvas class="chart" id="cvTime" width="620" height="130"></canvas>
+    <div class="readout">
+      <div class="ro"><div class="k">空域 σ（上图实测）</div><div class="v" id="roSp">—</div></div>
+      <div class="ro"><div class="k">时域 σ（原始序列）</div><div class="v" id="roTm">—</div></div>
+      <div class="ro"><div class="k">时域 σ（4 帧组平均）</div><div class="v" id="roTm4">—</div></div>
+      <div class="ro"><div class="k">空域中 FPN 占比</div><div class="v" id="roFpn">—</div></div>
+    </div>
+    <p class="note" id="tsVerdict"></p>
+  </div>
+</section>
+
+<section id="s4">
+  <h2>④ ISP 流水线：降噪在"工厂"的哪一站？</h2>
   <p>从传感器原始数据到一张能看的照片，中间有一条<b>图像信号处理（ISP）流水线</b>。降噪不是单独一步魔法，而是嵌在流水线里的关键工位。点击下面的工位看它做什么（橙色边框的两个工位都与降噪有关）：</p>
   <div class="card">
     <div class="pipe" id="pipe">
@@ -199,8 +244,8 @@ footer{padding:2rem 0 3rem;text-align:center;color:var(--muted);font-size:.82rem
 </section>
 
 <!-- ============ ④ 经典降噪 ============ -->
-<section id="s4">
-  <h2>④ 经典降噪三板斧</h2>
+<section id="s5">
+  <h2>⑤ 经典降噪三板斧</h2>
   <h3>第一斧：时域多帧叠加 —— 夜景模式的原理</h3>
   <p>单帧光子不够？那就<b>多拍几帧求平均</b>。噪声是随机的（有正有负），多帧平均后噪声互相抵消，信号保持不变：</p>
   <div class="formula" data-tex="\mathrm{SNR}_{N\ \text{帧}} = \sqrt{N}\times \mathrm{SNR}_{1\ \text{帧}}\quad\text{即每翻一倍}\ +3\,\text{dB}" style="text-align:center">
@@ -222,7 +267,7 @@ footer{padding:2rem 0 3rem;text-align:center;color:var(--muted);font-size:.82rem
       <div class="ro"><div class="k">实测增益</div><div class="v" id="roGain">—</div></div>
       <div class="ro"><div class="k">理论增益</div><div class="v" id="roGainT">—</div></div>
     </div>
-    <div class="callout">你的手机"夜景模式"按快门那几秒，正是干这件事的<b>豪华版</b>：连拍十几帧 RAW → 挑选/加权 → 运动区域防鬼影对齐 → 平均 + AI 精修。多一帧就多一分干净，这就是"手别抖，多等两秒"的价值。</div>
+    <div class="callout">你的手机"夜景模式"按快门那几秒，正是干这件事的<b>豪华版</b>：连拍十几帧 RAW → 挑选/加权 → 运动区域防鬼影对齐 → 平均 + AI 精修。多一帧就多一分干净，这就是"手别抖，多等两秒"的价值——它正是 ③ 说的<b>时域降噪</b>；而滤波是空域降噪，两者代价不同。</div>
   </div>
 
   <h3>第二斧：单帧空域滤波 —— 和噪声做"邻域斗争"</h3>
@@ -246,8 +291,8 @@ footer{padding:2rem 0 3rem;text-align:center;color:var(--muted);font-size:.82rem
   </div>
 </section>
 <!-- ============ ⑤ AI 前沿 ============ -->
-<section id="s5">
-  <h2>⑤ 前沿降噪：AI 进驻 ISP 流水线</h2>
+<section id="s6">
+  <h2>⑥ 前沿降噪：AI 进驻 ISP 流水线</h2>
   <p>传统算法在"数学规则"里打转，深度学习则<b>从海量成对数据（噪声图 → 干净图）里学规则</b>。降噪能力开始吃"数据红利"，并和手机芯片深度绑定。</p>
   <div class="tl">
     <div class="tl-item"><span class="yr">1998</span><p><b>双边滤波</b>问世，"保边降噪"思想开山。</p></div>
@@ -284,8 +329,8 @@ footer{padding:2rem 0 3rem;text-align:center;color:var(--muted);font-size:.82rem
 </section>
 
 <!-- ============ ⑥ 测验 ============ -->
-<section id="s6">
-  <h2>⑥ 三道题验收</h2>
+<section id="s7">
+  <h2>⑦ 四道题验收</h2>
   <div class="card">
     <p><b>Q1</b> · 一个像素收到的光子数从 100 涨到 10000（×100），散粒极限 SNR 提升多少？</p>
     <div class="btns quiz" data-a="B">
@@ -307,6 +352,13 @@ footer{padding:2rem 0 3rem;text-align:center;color:var(--muted);font-size:.82rem
     </div>
     <p class="note" data-exp="对：回归式降噪以逐像素平均误差为目标，极暗光下输出趋向'局部平均'，高频细节被抹掉。生成式模型（如 DarkDiff）正是冲着解决它来的。"></p>
   </div>
+  <div class="card">
+    <p><b>Q4</b> · 固定模式噪声（FPN）为什么用多帧平均消不掉？</p>
+    <div class="btns quiz" data-a="B">
+      <button class="quiz-opt" data-k="A">因为它幅度太小</button><button class="quiz-opt" data-k="B">它每帧都一模一样，平均不改变它</button><button class="quiz-opt" data-k="C">它只在暗光下出现</button>
+    </div>
+    <p class="note" data-exp="对：时域平均的 √N 收益只对'每帧独立'的随机噪声有效。FPN 是像素间的固定差异，每帧重复出现——只能靠标定（暗帧/平场校正）或空域滤波处理。"></p>
+  </div>
 </section>
 
 <!-- ============ 参考 ============ -->
@@ -318,7 +370,7 @@ footer{padding:2rem 0 3rem;text-align:center;color:var(--muted);font-size:.82rem
     <li>YOND: Practical Blind Raw Image Denoising（<a href="https://arxiv.org/abs/2506.03645" target="_blank" rel="noopener">arXiv 2506.03645</a>, 2025-06）</li>
     <li>QRNet: Joint Denoising and Deblurring on Dual-Exposure Quad-Bayer（IEEE TIP, <a href="https://arxiv.org/abs/2412.07256" target="_blank" rel="noopener">arXiv 2412.07256</a>, 2024-12）</li>
     <li>第五代骁龙 8 至尊版 20-bit ISP 与 AI 影像（公开报道, 2026-04）；荣耀 AI 超感光计算架构白皮书解读（2026-06）</li>
-    <li>经典文献：Bilateral Filtering（Tomasi &amp; Manduchi, ICCV 1998）；NLM（Buades et al., CVPR 2005）；BM3D（Dabov et al., TIP 2007）；DnCNN（Zhang et al., TIP 2017）；Learning to See in the Dark（Chen et al., CVPR 2018）</li>
+    <li>经典文献：Bilateral Filtering（Tomasi &amp; Manduchi, ICCV 1998）；NLM（Buades et al., CVPR 2005）；BM3D（Dabov et al., TIP 2007）；DnCNN（Zhang et al., TIP 2017）；Learning to See in the Dark（Chen et al., CVPR 2018）；EMVA 1288 标准（时域/空域噪声分开测定）</li>
     <li>诚实声明：本页模拟器为教学简化模型（泊松分布以正态近似、忽略固定模式噪声与色彩串扰、增益模型简化），但 √S 散粒极限、√N 多帧收益、ISO 不变性等<b>定量规律与真实传感器一致</b>。</li>
   </ul>
 </section>
@@ -718,10 +770,91 @@ addEventListener('scroll', () => {
   $$('nav.tocbar a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + cur));
 }, { passive: true });
 
+/* ===== 时域 vs 空域实验 ===== */
+const SW = 64, TFRAMES = 16, TLAM = 400;
+let tsFpn = false, tsAvg = false;
+const tsGain = new Float32Array(SW);
+let tsFrames = [];
+function tsGen() {
+  for (let i = 0; i < SW; i++) tsGain[i] = tsFpn ? 0.9 + Math.random() * 0.2 : 1;
+  tsFrames = [];
+  for (let f = 0; f < TFRAMES; f++) {
+    const row = new Float32Array(SW);
+    for (let i = 0; i < SW; i++) row[i] = poisson(TLAM * tsGain[i]) + gauss() * SIGMA_READ;
+    tsFrames.push(row);
+  }
+}
+function tsSpaceProfile() {
+  if (!tsAvg) return tsFrames[0].slice();
+  const out = new Float32Array(SW);
+  for (let f = 0; f < TFRAMES; f++) for (let i = 0; i < SW; i++) out[i] += tsFrames[f][i];
+  for (let i = 0; i < SW; i++) out[i] /= TFRAMES;
+  return out;
+}
+function stdOf(arr) { let m = 0; for (const v of arr) m += v; m /= arr.length;
+  let s = 0; for (const v of arr) s += (v - m) * (v - m); return Math.sqrt(s / (arr.length - 1)); }
+function groupMeans(seq, g) { const out = [];
+  for (let k = 0; k < seq.length / g; k++) { let s = 0;
+    for (let j = 0; j < g; j++) s += seq[k * g + j]; out.push(s / g); }
+  return out; }
+function tsLine(cv, main, ideal, opts) {
+  opts = opts || {};
+  const dpr = devicePixelRatio || 1, w = cv.clientWidth || 600, h = 130;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const c = cv.getContext('2d'); c.scale(dpr, dpr);
+  const dark = document.documentElement.dataset.theme === 'dark';
+  let lo = ideal, hi = ideal;
+  const scan = a => a.forEach(v => { lo = Math.min(lo, v); hi = Math.max(hi, v); });
+  scan(main); if (opts.ghost) scan(opts.ghost); if (opts.points) scan(opts.points);
+  const pad = Math.max(8, (hi - lo) * .18); lo -= pad; hi += pad;
+  const X = i => 10 + (i / (SW - 1)) * (w - 40), Y = v => h - 16 - (v - lo) / (hi - lo) * (h - 34);
+  c.strokeStyle = dark ? '#24304a' : '#e3e9f0'; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(10, Y(ideal)); c.lineTo(w - 30, Y(ideal)); c.stroke();
+  c.fillStyle = dark ? '#8b98ab' : '#64748b'; c.font = '10px sans-serif';
+  c.fillText('理想值 ' + Math.round(ideal), w - 108, Y(ideal) - 4);
+  const draw = (arr, col, lw) => { c.strokeStyle = col; c.lineWidth = lw; c.beginPath();
+    arr.forEach((v, i) => { i === 0 ? c.moveTo(X(i), Y(v)) : c.lineTo(X(i), Y(v)); }); c.stroke(); };
+  if (opts.ghost) draw(opts.ghost, dark ? 'rgba(148,163,184,.4)' : 'rgba(100,116,139,.35)', 1);
+  if (opts.main) draw(opts.main, '#16a34a', 2);
+  if (opts.points) { c.fillStyle = '#2563eb';
+    opts.points.forEach((v, i) => { c.beginPath(); c.arc(X(i * 4 + 1.5), Y(v), 4, 0, 7); c.fill(); }); }
+}
+function tsRender() {
+  const prof = tsSpaceProfile();
+  const meanGain = tsGain.reduce((a, b) => a + b, 0) / SW;
+  const ideal = TLAM * meanGain;
+  tsLine($('#cvSpace'), prof, ideal, { main: prof });
+  const cx = SW >> 1, seq = tsFrames.map(f => f[cx]);
+  const groups = groupMeans(seq, 4);
+  tsLine($('#cvTime'), seq, TLAM * tsGain[cx], { ghost: seq, points: tsAvg ? groups : null });
+  const sdSp = stdOf(prof), sdTm = stdOf(seq), sdTm4 = stdOf(groups);
+  const framesUsed = tsAvg ? TFRAMES : 1;
+  const varRnd = TLAM * meanGain / framesUsed + SIGMA_READ * SIGMA_READ / framesUsed;
+  const varTot = sdSp * sdSp;
+  const fpnPct = Math.max(0, 1 - varRnd / Math.max(1e-6, varTot));
+  $('#roSp').textContent = sdSp.toFixed(1) + ' 电子';
+  $('#roTm').textContent = sdTm.toFixed(1) + ' 电子';
+  $('#roTm4').textContent = sdTm4.toFixed(1) + ' 电子';
+  $('#roFpn').textContent = Math.round(fpnPct * 100) + '%';
+  const v = $('#tsVerdict');
+  if (!tsFpn && !tsAvg) v.textContent = '💬 纯随机噪声：时域 σ ≈ √400 ≈ 20 电子，空域 σ 也是 ~20——同一份随机性的两种观察方式。';
+  else if (!tsFpn && tsAvg) v.textContent = '💬 16 帧平均后：空域 σ 降到约 1/4 ✓，4 帧组平均的时域 σ 降到 1/2 ✓——随机噪声在两个维度都享受 √N 红利。';
+  else if (tsFpn && !tsAvg) v.textContent = '💬 FPN 已加入：空域 σ 明显抬升（像素间固定差异），但时域 σ 几乎没变——FPN 不随时间抖动，它不是时域噪声。';
+  else v.textContent = '💬 关键现象：空域 σ 卡住了——随机部分已被平均降 4 倍，残留的全是 FPN。时域平均杀不死固定模式噪声：只能标定扣除（暗帧/平场）或靠空域滤波。';
+}
+$('#fpnBtn').addEventListener('click', () => { tsFpn = !tsFpn;
+  $('#fpnBtn').textContent = 'FPN 固定模式噪声：' + (tsFpn ? '开' : '关');
+  $('#fpnBtn').classList.toggle('on', tsFpn); tsGen(); tsRender(); });
+$('#avgBtn').addEventListener('click', () => { tsAvg = !tsAvg;
+  $('#avgBtn').textContent = '16 帧平均：' + (tsAvg ? '开' : '关');
+  $('#avgBtn').classList.toggle('on', tsAvg); tsRender(); });
+$('#regenBtn').addEventListener('click', () => { tsGen(); tsRender(); });
+
 /* —— 启动 —— */
 $('#vPh').textContent = Math.round(Math.pow(10, +$('#rPh').value / 100 * 4));
 renderSim();
 genFrames(); renderMulti(1);
+tsGen(); tsRender();
 renderOil();
 $$('#pipe .pstep')[4].classList.add('on');
 $('#pipeDesc').innerHTML = '<b>' + PIPE_DESC[4][0] + '</b><br>' + PIPE_DESC[4][1];
