@@ -89,12 +89,15 @@ button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .refs{font-size:.82rem;color:var(--muted)}
 .refs li{margin:4px 0}
 footer{padding:2rem 0 3rem;text-align:center;color:var(--muted);font-size:.82rem}
+.tocbar .back{color:var(--accent);font-weight:600;border:1px solid var(--border);border-radius:999px;padding:3px 12px;flex-shrink:0}
+.tocbar .back:hover{border-color:var(--accent);background:var(--card)}
 .to-top{position:fixed;right:18px;bottom:18px;border-radius:50%;width:42px;height:42px;font-size:1.1rem;box-shadow:0 2px 8px rgba(0,0,0,.2)}
 .hint{font-size:.78rem;color:var(--muted);font-style:italic}
 </style>
 </head>
 <body>
 <nav class="tocbar"><div class="in">
+  <a class="back" id="backDemo" href="/demos/">← 演示集</a>
   <a href="#s1">① 噪声从哪来</a><a href="#s2">② SNR 怎么算</a><a href="#s3">③ 流水线位置</a><a href="#s4">④ 经典降噪</a><a href="#s5">⑤ AI 前沿</a><a href="#s6">⑥ 测验</a><a href="#refs">参考</a>
 </div></nav>
 
@@ -330,6 +333,7 @@ footer{padding:2rem 0 3rem;text-align:center;color:var(--muted);font-size:.82rem
   const t = localStorage.getItem('theme') ??
     (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   document.documentElement.dataset.theme = t;
+  if (location.protocol === 'file:') { const b = document.getElementById('backDemo'); if (b) b.style.display = 'none'; }
   addEventListener('storage', e => {
     if (e.key === 'theme' && e.newValue) document.documentElement.dataset.theme = e.newValue;
   });
