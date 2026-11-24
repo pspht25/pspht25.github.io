@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>双边滤波：既平滑又保边 · 经典算法演绎</title>
+<meta name="description" content="面向小白的交互科普：双边滤波为什么能既平滑又保边，权重怎么算、窗口怎么滑动、两个参数怎么调，以及它 1998 年诞生到今天的故事。">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<style>
+:root{
+  color-scheme: light dark;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+}
+html[data-theme='light']{
+  --bg:#f6f8fb; --bg-soft:#eef2f7; --fg:#1f2937; --muted:#64748b;
+  --card:#ffffff; --border:#e3e9f0; --accent:#2563eb; --accent-soft:rgba(37,99,235,.1);
+  --warn:#dc2626; --ok:#16a34a; --amber:#d97706; --chip:#f1f5f9;
+}
+html[data-theme='dark']{
+  --bg:#0b1220; --bg-soft:#111b2e; --fg:#e2e8f0; --muted:#94a3b8;
+  --card:#16223a; --border:#24304a; --accent:#5ea2ff; --accent-soft:rgba(94,162,255,.14);
+  --warn:#f87171; --ok:#4ade80; --amber:#fbbf24; --chip:#1d2a44;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font);line-height:1.75;font-size:16px}
+.wrap{max-width:900px;margin:0 auto;padding:0 16px 60px}
+a{color:var(--accent)}
+h1{font-size:1.9rem;margin:.2em 0 .4em;line-height:1.3}
+h2{font-size:1.45rem;margin:1.6em 0 .5em;line-height:1.35}
+h3{font-size:1.08rem;margin:.6em 0 .3em}
+p{margin:.6em 0}
+code,.mono{font-family:var(--mono);font-size:.9em;background:var(--chip);border-radius:6px;padding:1px 6px}
+section{padding:1.8rem 0 .6rem;border-bottom:1px dashed var(--border)}
+.hero{text-align:center;padding:2.2rem 0 0}
+.hero .emoji{font-size:2.6rem}
+.hero h1{margin:.2em 0}
+.hero .sub{color:var(--muted);font-size:.95rem;margin:.3em 0}
+.badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;justify-content:center}
+.badge{font-size:.75rem;padding:3px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
+nav.tocbar{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);overflow-x:auto;white-space:nowrap}
+nav.tocbar .in{display:flex;gap:4px;max-width:900px;margin:0 auto;padding:8px 12px}
+nav.tocbar a{color:var(--muted);text-decoration:none;font-size:.82rem;padding:4px 10px;border-radius:999px;flex-shrink:0}
+nav.tocbar a:hover,nav.tocbar a.on{background:var(--accent-soft);color:var(--accent)}
+nav.tocbar .back{color:var(--accent);font-weight:600;border:1px solid var(--border)}
+section{scroll-margin-top:52px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px 18px;margin:14px 0;box-shadow:0 1px 3px rgba(15,23,42,.06)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+@media(max-width:700px){.grid2,.grid3{grid-template-columns:1fr}}
+.note{border-left:3px solid var(--border);padding:10px 16px;margin:16px 0 0;color:var(--muted);font-size:14.5px;background:var(--chip)}
+.callout{border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:0 10px 10px 0;padding:12px 16px;margin:16px 0}
+.formula{font-size:1.05rem;padding:10px 14px;background:var(--bg-soft);border-radius:10px;overflow-x:auto;margin:10px 0}
+.katex-display{margin:.4em 0}
+.katex{font-size:1.02em}
+canvas.view{width:100%;max-width:288px;height:auto;image-rendering:pixelated;border:1px solid var(--border);border-radius:10px;display:block;background:var(--bg-soft);cursor:crosshair;touch-action:manipulation}
+canvas.wide{max-width:none;width:100%;cursor:default}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+button.act{font-family:var(--font);font-size:.86rem;color:var(--fg);background:var(--card);border:1px solid var(--border);border-radius:8px;padding:7px 14px;cursor:pointer}
+button.act:hover{border-color:var(--accent);color:var(--accent)}
+button.act.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.sliders{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px 18px;margin:10px 0}
+.sliders label{font-size:.85rem;color:var(--muted);display:flex;justify-content:space-between;align-items:center;gap:8px}
+.sliders label b{color:var(--fg);font-family:var(--mono);font-weight:600;min-width:52px;text-align:right}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.readout{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:12px 0}
+.ro{background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:8px 12px}
+.ro .k{font-size:.75rem;color:var(--muted)}
+.ro .v{font-family:var(--mono);font-size:1.05rem;font-weight:600;margin-top:2px;word-break:break-all}
+.verdict{border-radius:10px;padding:10px 14px;margin:10px 0;font-size:.92rem;background:var(--bg-soft);border:1px solid var(--border)}
+.verdict.good{background:rgba(22,163,74,.1);border-color:var(--ok);color:var(--ok)}
+.verdict.warn1{background:rgba(217,119,6,.1);border-color:var(--amber);color:var(--amber)}
+.verdict.bad{background:rgba(220,38,38,.08);border-color:var(--warn);color:var(--warn)}
+/* 权重放大镜的数值表 */
+.mirror{display:grid;grid-template-columns:auto auto;gap:14px;justify-content:center;margin:12px 0}
+@media(max-width:640px){.mirror{grid-template-columns:1fr}}
+.wtbl{border-collapse:collapse;margin:0 auto}
+.wtbl caption{caption-side:top;font-size:.78rem;color:var(--muted);padding-bottom:4px;white-space:nowrap}
+.wtbl td{border:1px solid var(--border);width:44px;height:38px;text-align:center;font-family:var(--mono);font-size:.72rem;padding:0;position:relative;vertical-align:middle}
+.wtbl td.center{outline:2px solid var(--accent);outline-offset:-2px;font-weight:700}
+.wtbl td .w{position:absolute;bottom:1px;right:2px;font-size:.62rem;color:var(--muted)}
+.eq-line{font-family:var(--mono);font-size:.78rem;padding:6px 10px;background:var(--bg-soft);border-radius:8px;margin:6px 0;overflow-x:auto;white-space:nowrap}
+.eq-line b.dead{color:var(--warn)}
+.eq-line b.live{color:var(--ok)}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:.78rem;color:var(--muted);margin:8px 0}
+.legend .dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+/* 时间线 */
+.timeline{position:relative;margin:18px 0;padding-left:22px}
+.timeline::before{content:'';position:absolute;left:7px;top:6px;bottom:6px;width:2px;background:var(--border)}
+.tl{position:relative;margin:0 0 16px}
+.tl::before{content:'';position:absolute;left:-21px;top:8px;width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.tl .yr{font-family:var(--mono);font-weight:700;color:var(--accent);font-size:.95rem}
+.tl .t{font-weight:700}
+.tl .d{font-size:.88rem;color:var(--muted)}
+/* 测验 */
+.btns.quiz{margin:8px 0}
+.quiz-opt{font-family:var(--font);font-size:.9rem;color:var(--fg);background:var(--card);border:1px solid var(--border);border-radius:8px;padding:7px 14px;cursor:pointer}
+.quiz-opt.right{background:rgba(22,163,74,.12);border-color:var(--ok);color:var(--ok);font-weight:700}
+.quiz-opt.wrong{background:rgba(220,38,38,.1);border-color:var(--warn);color:var(--warn)}
+footer{text-align:center;color:var(--muted);font-size:.85rem;padding:30px 0 10px}
+.to-top{position:fixed;right:16px;bottom:16px;z-index:60;width:40px;height:40px;border-radius:50%;border:1px solid var(--border);background:var(--card);color:var(--muted);font-size:1.1rem;cursor:pointer;opacity:0;pointer-events:none;transition:opacity .25s}
+.to-top.show{opacity:1;pointer-events:auto}
+</style>
+</head>
+<body>
+<nav class="tocbar"><div class="in">
+  <a class="back" id="backDemo" href="/demos/">← 演示集</a>
+  <a href="#s1">① 高斯之败</a><a href="#s2">② 核心思想</a><a href="#s3">③ 权重放大镜</a><a href="#s4">④ 逐像素工作</a><a href="#s5">⑤ 两个旋钮</a><a href="#s6">⑥ 全图对比</a><a href="#s7">⑦ 诞生与影响</a><a href="#s8">⑧ 测验</a><a href="#refs">参考</a>
+</div></nav>
+
+<div class="wrap">
+<header class="hero">
+  <span class="emoji">🎨</span>
+  <h1>双边滤波：既平滑又保边</h1>
+  <p class="sub">经典算法演绎 · 一次加权平均，凭什么能在磨皮的同时保住睫毛</p>
+  <p class="sub">每个演示都在浏览器本地实时运行 · 公式用 KaTeX 渲染（离线自动回退为文本排版）</p>
+  <div class="badges">
+    <span class="badge">零依赖单文件</span><span class="badge">中间过程全可见</span><span class="badge">真实像素计算</span><span class="badge">1998 → 今日</span>
+  </div>
+</header>
+
+<!-- ============ ① 高斯之败 ============ -->
+<section id="s1">
+  <h2>① 先看高斯滤波输在哪</h2>
+  <p>图像降噪的起点是<b>加权平均</b>：把一个像素和它周围的邻居平均一下，随机噪声互相抵消，画面就干净了。最常用的邻居权重按<b>空间距离</b>给——离得越近权重越大，这就是<b>高斯滤波</b>。它在平坦区域表现很好，但它只认距离、不认内容：<b>边缘两侧的暗像素和亮像素，会被一视同仁地搅在一起</b>。</p>
+  <div class="card">
+    <p style="margin-top:0"><b>动手试试：</b>下面是同一张测试图（暗条带 + 圆盘 + 渐变区）加噪声后的两版滤波输出，都用同样的空间窗口。看看边缘发生了什么。</p>
+    <div class="grid3">
+      <div><canvas class="view" id="cvGIn" width="288" height="192"></canvas><p class="note" style="margin:6px 0 0">加噪输入</p></div>
+      <div><canvas class="view" id="cvGau" width="288" height="192"></canvas><p class="note" style="margin:6px 0 0">高斯滤波（σ<sub>s</sub>=2）</p></div>
+      <div><canvas class="view" id="cvBf1" width="288" height="192"></canvas><p class="note" style="margin:6px 0 0">双边滤波（σ<sub>s</sub>=2, σ<sub>r</sub>=30）</p></div>
+    </div>
+    <div class="readout">
+      <div class="ro"><div class="k">竖直边缘锐度保留（高斯）</div><div class="v" id="roGaE">—</div></div>
+      <div class="ro"><div class="k">竖直边缘锐度保留（双边）</div><div class="v" id="roBfE">—</div></div>
+      <div class="ro"><div class="k">平坦区噪声残留（高斯 / 双边）</div><div class="v" id="roNz">—</div></div>
+    </div>
+    <div class="btns"><button class="act" id="btnGNewNoise">🎲 换一批噪声</button></div>
+    <p class="note">读数解释：边缘锐度保留 = 滤波后边缘左右亮度差 ÷ 原始边缘左右亮度差。双边几乎不损失（≈95%+），高斯掉到 40% 上下——<b>这就是"糊"的定量含义</b>。而平坦区里两者降噪能力差不多。</p>
+  </div>
+  <div class="callout"><b>问题的本质：</b>高斯滤波的权重表在一张图上是固定的（只看距离）。要保边，权重必须<b>看图说话</b>——"这个邻居和中心像不像？"这正是双边滤波补上的那一个因子。</div>
+</section>
+
+<!-- ============ ② 核心思想 ============ -->
+<section id="s2">
+  <h2>② 核心思想：两个高斯相乘</h2>
+  <p>双边滤波只在高斯滤波的权重上<b>多乘一个因子</b>：除了"离得近"（<b>空间核</b>），还要求"长得像"（<b>值域核</b>）。亮度差得越远的邻居，权重按指数压到几乎为零。</p>
+  <div class="formula dm" data-tex="\text{BF}[I]_{p}=\frac{1}{W_p}\sum_{q\in S}\ \underbrace{G_{\sigma_s}(\lVert p-q\rVert)}_{\text{空间核：离得近}}\ \underbrace{G_{\sigma_r}(|I_p-I_q|)}_{\text{值域核：长得像}}\ \cdot\ I_q"><b>BF[I]<sub>p</sub></b> = （1/W<sub>p</sub>）· Σ<sub>q∈S</sub> <b>G<sub>σs</sub>(‖p−q‖)</b><span style="color:var(--muted)">〔空间核：离得近〕</span> × <b>G<sub>σr</sub>(|I<sub>p</sub>−I<sub>q</sub>|)</b><span style="color:var(--muted)">〔值域核：长得像〕</span> × I<sub>q</sub></div>
+  <p style="text-align:center;color:var(--muted);font-size:.9rem">其中分母 <span class="formula" data-tex="W_p=\sum_q G_{\sigma_s}\cdot G_{\sigma_r}">W<sub>p</sub> = Σ 空间核 × 值域核</span> 是权重总和，保证输出仍是亮度尺度；<span class="formula" data-tex="G_{\sigma}(x)=e^{-x^2/(2\sigma^2)}">G<sub>σ</sub>(x) = e<sup>−x²/2σ²</sup></span> 就是熟悉的高斯函数。</p>
+  <div class="grid2">
+    <div class="card"><h3>🧭 空间核 G<sub>σs</sub>（管"谁来参与"）</h3><p>只看<b>几何距离</b> ‖p−q‖。作用相当于高斯滤波的窗口：σ<sub>s</sub> 越大，参与平均的邻居范围越大。它在整张图上<b>固定不变</b>——和高斯滤波完全一样。</p></div>
+    <div class="card"><h3>🎚️ 值域核 G<sub>σr</sub>（管"敢不敢用它"）</h3><p>只看<b>亮度差</b> |I<sub>p</sub>−I<sub>q</sub>|。和中心几乎一样亮的邻居 → 权重≈1，照常平均；亮度差很大的邻居（比如边缘对面的）→ 权重≈0，等于不存在。<b>它在每个像素上都重新算</b>——这是双边滤波"看图说话"的灵魂，也是它非线性、慢的原因。</p></div>
+  </div>
+  <div class="callout"><b>一句话记住：</b>空间核决定"窗有多大"，值域核决定"窗里谁被开除"。平坦区里大家亮度都差不多，值域核全部放行 → 和高斯一样平滑；边缘上对面阵营全部被开除 → 只跟自己阵营平均，边缘自然不糊。</div>
+</section>
+
+<!-- ============ ③ 权重放大镜 ============ -->
+<section id="s3">
+  <h2>③ 权重放大镜：把中间计算摊开给你看</h2>
+  <p>这一节我们把公式落到一个真实的 5×5 窗口上。<b>点击下面左侧的图</b>选一个中心像素（或直接用预设按钮），右侧两张表分别是窗口内的<b>亮度值</b>和每个邻居的<b>总权重</b>，下方列出代表性邻居的计算展开。</p>
+  <div class="card">
+    <div class="mirror">
+      <div>
+        <canvas class="view" id="cvProbe" width="288" height="192" style="cursor:crosshair"></canvas>
+        <div class="btns"><button class="act" id="btnOnEdge">📍 站在边缘上</button><button class="act" id="btnOnFlat">🌊 站在平坦区</button><button class="act" id="btnOnDot">⚪ 站在圆盘里</button></div>
+      </div>
+      <div>
+        <table class="wtbl" id="tblVal"><caption>窗口亮度值（中心：白框）</caption></table>
+        <table class="wtbl" id="tblW" style="margin-top:8px"><caption>总权重 = 空间核 × 值域核（0~1，中心自身为 1）</caption></table>
+      </div>
+    </div>
+    <div class="sliders">
+      <label>窗口 σ<sub>s</sub> <b id="lblPs">1.2</b><input type="range" id="rngPs" min="0.5" max="3" step="0.1" value="1.2"></label>
+      <label>值域 σ<sub>r</sub> <b id="lblPr">25</b><input type="range" id="rngPr" min="3" max="120" step="1" value="25"></label>
+    </div>
+    <div id="eqBox" style="margin-top:6px"></div>
+    <div class="readout">
+      <div class="ro"><div class="k">权重总和 Σw</div><div class="v" id="roSw">—</div></div>
+      <div class="ro"><div class="k">加权和 Σw·I</div><div class="v" id="roSwi">—</div></div>
+      <div class="ro"><div class="k">输出 = Σw·I / Σw</div><div class="v" id="roOut">—</div></div>
+      <div class="ro"><div class="k">有效邻居数（w≥0.01）</div><div class="v" id="roNv">—</div></div>
+    </div>
+    <p class="note">解读：<b>站在边缘上时</b>（比如圆盘与背景的交界），对面阵营的邻居亮度和中心差一大截，值域核把它们的权重打到近乎 0（表里深色格子），输出几乎不变——这就是保边的微观机制。<b>站在平坦区时</b>，邻居亮度都接近，权重接近纯空间核，输出≈窗口平均，噪声被抹掉。<b>试着把 σ<sub>r</sub> 拉到 120</b>：值域核形同虚设，权重表退化成纯空间核的形状——双边滤波变回高斯滤波。</p>
+  </div>
+</section>
+
+<!-- ============ ④ 逐像素工作 ============ -->
+<section id="s4">
+  <h2>④ 滤窗怎么走：逐像素看一遍工作过程</h2>
+  <p>双边滤波是<b>非迭代</b>的：一遍扫描，每个像素独立完成一次"加权平均"。左图红框是正在处理的窗口，右图亮起的部分是<b>已经算完</b>的输出。播放看看（可以用"单步"慢动作观察每个像素）。</p>
+  <div class="card">
+    <div class="grid2">
+      <div><canvas class="view" id="cvAni" width="288" height="192" style="cursor:default"></canvas><p class="note" style="margin:6px 0 0">输入 + 当前窗口</p></div>
+      <div><canvas class="view" id="cvAno" width="288" height="192" style="cursor:default"></canvas><p class="note" style="margin:6px 0 0">输出（逐像素点亮）</p></div>
+    </div>
+    <div class="btns">
+      <button class="act" id="btnPlay">▶ 播放</button>
+      <button class="act" id="btnStep">⏭ 单步 +1 像素</button>
+      <button class="act" id="btnReset4">↺ 重来</button>
+      <span style="display:inline-flex;gap:6px;align-items:center;font-size:.85rem;color:var(--muted)">速度
+        <button class="act spd on" data-s="2">慢</button><button class="act spd" data-s="6">中</button><button class="act spd" data-s="16">快</button>
+      </span>
+      <span class="note" style="margin:0;padding:6px 10px">进度 <span class="mono" id="aniPct">0%</span> · 当前输出 <span class="mono" id="aniPix">—</span></span>
+    </div>
+    <div class="callout" style="margin-top:14px"><b>两件值得注意的事：</b>① 窗口扫过边缘时，红框里的"对面阵营"始终被值域核压制，所以输出和输入在边缘两侧几乎一样亮——保边不是靠事后检测，而是每个窗口<b>当场</b>决定的。② 每个输出像素只依赖输入图的一个小窗口（<b>局部性</b>），互不干扰——这就是它能并行、能在 GPU 上实时跑的原因（第⑦章的双边网格正是把这一点榨到极致）。</div>
+  </div>
+</section>
+
+<!-- ============ ⑤ 两个旋钮 ============ -->
+<section id="s5">
+  <h2>⑤ 观念参数：σ<sub>s</sub> 和 σ<sub>r</sub> 到底在调什么</h2>
+  <p>双边滤波只有两个真正要紧的参数，各自的"观念含义"非常清晰：</p>
+  <div class="grid2">
+    <div class="card"><h3>σ<sub>s</sub> —— 空间尺度："多大一片算邻居"</h3>
+      <p>决定参与平均的<b>物理范围</b>。调大 → 更大的纹理被抹平（粗毛孔也平了）；调小 → 只抹最细的噪声。它相当于高斯滤波的 σ，<b>与图像内容无关</b>。OpenCV 里对应 <code>sigmaSpace</code> / 直径 <code>d</code>。</p></div>
+    <div class="card"><h3>σ<sub>r</sub> —— 亮度容忍度："差多少算异类"</h3>
+      <p>决定值域核的<b>宽容程度</b>，这是双边滤波的独有旋钮。直觉标定：<b>σ<sub>r</sub> ≈ 你想抹掉的噪声幅度</b>。噪声 σ≈10 就设 10 左右——比噪声大的亮度差（真实边缘，通常几十以上）会被保留，比噪声小的抖动被平均。OpenCV 里对应 <code>sigmaColor</code>。</p></div>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">两个极限情况（理解参数边界的最好方式）</h3>
+    <div class="formula dm" data-tex="\lim_{\sigma_r\to\infty}\text{BF}[I]=\text{Gaussian}_{\sigma_s}\qquad\qquad \lim_{\sigma_r\to 0}\ \text{BF}[I]\to I">σ<sub>r</sub>→∞ 时：BF[I] = Gaussian<sub>σs</sub>　　σ<sub>r</sub>→0 时：BF[I] → I（几乎不动）</div>
+    <p>σ<sub>r</sub>→∞：所有亮度都被容忍，值域核≡1，双边<b>退化为高斯</b>。σ<sub>r</sub>→0：只有亮度完全相同的邻居才有一点点权重，输出几乎不动。<b>调参就是在两个失败模式之间找窄路。</b></p>
+  </div>
+  <div class="note">顺带回答一个常见疑问：为什么不用"先做边缘检测、再避开边缘平滑"？因为边缘检测本身是硬判断（保/不保），阈值难选还易碎；双边滤波用的是<b>软权重</b>——每对邻居一个连续的信任分，不用显式找边缘，边缘的"保护"是大量小决策自然涌现的结果。</div>
+</section>
+
+<!-- ============ ⑥ 全图对比实验 ============ -->
+<section id="s6">
+  <h2>⑥ 全图实验：亲手把参数调到刚刚好</h2>
+  <div class="card">
+    <div class="sliders">
+      <label>噪声 σ <b id="lblN6">15</b><input type="range" id="rngN6" min="0" max="40" step="1" value="15"></label>
+      <label>双边 σ<sub>s</sub> <b id="lblS6">2</b><input type="range" id="rngS6" min="1" max="6" step="1" value="2"></label>
+      <label>双边 σ<sub>r</sub> <b id="lblR6">25</b><input type="range" id="rngR6" min="2" max="120" step="1" value="25"></label>
+    </div>
+    <div class="grid3">
+      <div><canvas class="view" id="cv6a" width="288" height="192"></canvas><p class="note" style="margin:6px 0 0">加噪输入（σ=<span id="rn6">15</span>）</p></div>
+      <div><canvas class="view" id="cv6g" width="288" height="192"></canvas><p class="note" style="margin:6px 0 0">高斯（σ<sub>s</sub>=<span id="rs6">2</span>）</p></div>
+      <div><canvas class="view" id="cv6b" width="288" height="192"></canvas><p class="note" style="margin:6px 0 0">双边（σ<sub>s</sub>=<span id="rs6b">2</span>, σ<sub>r</sub>=<span id="rr6">25</span>）</p></div>
+    </div>
+    <div class="readout">
+      <div class="ro"><div class="k">平坦区降噪倍数（高斯）</div><div class="v" id="ro6g">—</div></div>
+      <div class="ro"><div class="k">平坦区降噪倍数（双边）</div><div class="v" id="ro6b">—</div></div>
+      <div class="ro"><div class="k">边缘保留（双边）</div><div class="v" id="ro6e">—</div></div>
+    </div>
+    <div class="verdict" id="vd6">拖动滑块，看看你能不能把三个目标同时做到：噪声抹干净、边缘不糊、细节（渐变区）不丢。</div>
+    <div class="btns"><button class="act" id="btnMagic">✨ 帮我调到"刚刚好"（σ<sub>r</sub>≈噪声σ）</button></div>
+    <p class="note">小抄：把 σ<sub>r</sub> 调到比噪声 σ 大一点点，双边几乎总能赢下这张对比表——这就是"σ<sub>r</sub> ≈ 噪声幅度"这条经验法则的由来。σ<sub>r</sub> 调过头（比如 120），仔细看边缘保留率往下掉、渐变区的细腻层次也开始发闷——它开始把真实的内容也当成噪声抹掉了。</p>
+  </div>
+</section>
+
+<!-- ============ ⑦ 诞生与今日影响 ============ -->
+<section id="s7">
+  <h2>⑦ 诞生与今日：一个"土办法"的三十年</h2>
+  <p>双边滤波不是哪个天才灵光一现的产物，而是几路人马各自摸索、最后被一个名字收拢的"殊途同归"。下面这条线全部有文献可查。</p>
+  <div class="timeline">
+    <div class="tl"><div class="yr">1985 · 思想源头</div><div class="t">Yaroslavsky 邻域滤波</div><div class="d">《Digital Picture Processing》提出"只平均亮度相近的邻居"——双边滤波的全部思想已在此，但没引起图形学界的注意。</div></div>
+    <div class="tl"><div class="yr">1990 · PDE 流派</div><div class="t">Perona &amp; Malik 各向异性扩散</div><div class="d">偏微分方程路线的保边平滑：把"沿边缘扩散、跨边缘刹车"写成热传导方程。与双边滤波异曲同工（后来被 Elad、Barash 等人证明在特定条件下等价/相通）。</div></div>
+    <div class="tl"><div class="yr">1995 · 奠基</div><div class="t">Aurich &amp; Weule 非线性高斯</div><div class="d">DAGM'95 论文首次给出"高斯×高斯"的具体形式——双边滤波的基石，同样没能火起来。</div></div>
+    <div class="tl"><div class="yr">1997 · 独立重现</div><div class="t">Smith &amp; Brady 的 SUSAN</div><div class="d">用"同值核面积"实现同类思想的另一条路（IJCV 1997）。</div></div>
+    <div class="tl"><div class="yr">1998 · 命名即出圈</div><div class="t">Tomasi &amp; Manduchi：bilateral filter</div><div class="d">ICCV'98（印度新德里，pp. 839–846）。方法简单、非迭代、彩色图可直接在 RGB 上做且边缘处不出"幻影色"——正是工程界最想要的 package。一个好名字让散落的思想有了汇流口。</div></div>
+    <div class="tl"><div class="yr">2002 · 理论与首秀</div><div class="t">Elad 的贝叶斯解释 ＆ Durand–Dorsey 的 HDR 显示</div><div class="d">Elad（IEEE TIP 11(10)）证明双边滤波可从贝叶斯方法推导，等价于知名迭代算法的一步——"土办法"拿到理论户口。同年 Durand–Dorsey（SIGGRAPH 2002）用它做 HDR 色调映射：把图像分解成"大结构 + 细节"两层，只压大结构的对比度，细节完好，一举成名。</div></div>
+    <div class="tl"><div class="yr">2004 · 引导版</div><div class="t">交叉/联合双边滤波</div><div class="d">Petschnigg 等与 Eisemann–Durand 同年提出：值域核不看自己、改看另一张参考图——闪光/无闪光双照片融合的经典方案（"边缘信息从闪光照片借"）。</div></div>
+    <div class="tl"><div class="yr">2006–2007 · 提速百倍</div><div class="t">信号处理理论 ＆ 双边网格</div><div class="d">Paris–Durand（ECCV 2006）把亮度当成第三维，把双边滤波写成高维空间里的普通卷积，空间/亮度都可下采样，误差有解析控制。Chen–Paris–Durand（SIGGRAPH 2007）把它做成 GPU 数据结构"双边网格"，高清视频实时保边处理。</div></div>
+    <div class="tl"><div class="yr">2010 · 挑战者出现</div><div class="t">何恺明：引导滤波</div><div class="d">指出双边的软肋——边缘附近的<b>梯度反转</b>伪影；用局部线性模型给出 O(N)、复杂度与窗口大小无关的替代品，之后很多管线换用了它。但双边滤波并未退场——简单、直观、可解释，仍是工程与教学的第一选择。</div></div>
+    <div class="tl"><div class="yr">2016–2017 · 进入 AI 时代</div><div class="t">HDR+ ＆ HDRNet</div><div class="d">Google 手机 HDR+ 流水线（SIGGRAPH Asia 2016）大量使用双边类算子；HDRNet（Gharbi 等，SIGGRAPH 2017）让小网络在低分辨率上预测双边网格的仿射系数，全分辨率只需一次插值——神经网络与双边网格合流，手机照片实时增强（磨皮、色调）由此成为标配。</div></div>
+  </div>
+  <div class="grid3">
+    <div class="card"><h3>🛠️ 你的修图软件里就有它</h3><p style="font-size:.9rem">Photoshop 的「<b>表面模糊</b>」（Surface Blur）就是双边滤波的变体——综述确认它用方盒空间核 + 帐篷形值域核；人像摄影师用它抹平皮肤、保住眼睛和嘴唇的锐度。手机相册的"磨皮"，多数也是双边或它的近亲。</p></div>
+    <div class="card"><h3>📦 一行代码随时可用</h3><p style="font-size:.9rem">OpenCV：<code>cv2.bilateralFilter(img, d, sigmaColor, sigmaSpace)</code>。官方建议实时用 <code>d=5</code>、离线降噪用 <code>d=9</code>；σ<sub>r</sub>&gt;150 时画面开始"卡通化"——正是第⑤章说的退化为强高斯的现象。</p></div>
+    <div class="card"><h3>🧬 它的后代谱系</h3><p style="font-size:.9rem">把值域核从"单像素亮度差"升级为"<b>像素块</b>相似度"，得到划时代的非局部均值（NL-means）降噪；后者又孕育了常年霸榜的 BM3D。保边平滑这一脉，一路通向今天的深度学习降噪。</p></div>
+  </div>
+  <div class="callout"><b>为什么它能活三十年？</b>因为它把一个复杂目标（"平滑但别碰结构"）翻译成了一个人人可懂的最小改动（权重多乘一个因子）。后来者有更快的（引导滤波）、更强的（BM3D、神经网络），但作为<b>思想的启蒙课</b>——"让滤波器看图说话"——双边滤波仍是最好的入门案例。</div>
+</section>
+
+<!-- ============ ⑧ 测验 ============ -->
+<section id="s8">
+  <h2>⑧ 三道小题，检验有没有真的懂</h2>
+  <div class="card">
+    <p><b>Q1.</b> 把 σ<sub>r</sub> 无限调大，双边滤波会变成什么？</p>
+    <div class="btns quiz" data-a="B" data-exp="σr→∞ 时值域核恒为 1，权重只剩空间核——正是高斯滤波，边缘照糊不误。">
+      <button class="quiz-opt" data-k="A">变成中值滤波</button>
+      <button class="quiz-opt" data-k="B">变成高斯滤波</button>
+      <button class="quiz-opt" data-k="C">输出不变（等于原图）</button>
+    </div>
+  </div>
+  <div class="card">
+    <p><b>Q2.</b> 图上噪声幅度约 σ=10，σ<sub>r</sub> 取多少比较合理？</p>
+    <div class="btns quiz" data-a="B" data-exp="经验法则 σr≈噪声幅度：比噪声大的亮度差（真实边缘）被保留，比噪声小的抖动被平均。σr=1 什么都不动，σr=100 把真边缘也抹了。">
+      <button class="quiz-opt" data-k="A">≈1（越保守越好）</button>
+      <button class="quiz-opt" data-k="B">≈10</button>
+      <button class="quiz-opt" data-k="C">≈100（越大越强）</button>
+    </div>
+  </div>
+  <div class="card">
+    <p><b>Q3.</b> 双边滤波"保边"靠的是什么机制？</p>
+    <div class="btns quiz" data-a="C" data-exp="它从不显式检测边缘。每个窗口里，值域核自动把亮度和中心差得远的邻居权重压到≈0，'不跨阵营平均'是大量局部小决策涌现出的整体效果。">
+      <button class="quiz-opt" data-k="A">先做边缘检测，再绕开边缘平滑</button>
+      <button class="quiz-opt" data-k="B">只处理平坦区，边缘区直接跳过</button>
+      <button class="quiz-opt" data-k="C">值域权重自动压制亮度差大的邻居</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 参考 ============ -->
+<section id="refs" style="border-bottom:none">
+  <h2>参考与诚实声明</h2>
+  <p style="font-size:.9rem">史实与公式均核对自原始文献：Tomasi &amp; Manduchi (ICCV'98, pp.839–846)；Yaroslavsky (1985)；Perona &amp; Malik (TPAMI 1990)；Aurich &amp; Weule (DAGM'95)；Smith &amp; Brady (IJCV 1997, SUSAN)；Elad (IEEE TIP 2002)；Durand &amp; Dorsey (SIGGRAPH 2002)；Eisemann &amp; Durand / Petschnigg et al. (SIGGRAPH 2004)；Paris &amp; Durand (ECCV 2006 / IJCV 2009)；Chen, Paris &amp; Durand (SIGGRAPH 2007)；He et al. (ECCV 2010)；Gharbi et al. (SIGGRAPH 2017)；Paris et al. 综述《Bilateral Filtering: Theory and Applications》(2009)；Adobe 官方文档与 OpenCV 官方文档。</p>
+  <p style="font-size:.9rem">诚实声明：为让机制一目了然，本页演示做了三处简化——① 灰度单通道演示（彩色双边就是三个通道各乘同一套权重）；② 窗口用方形截断，实际可用更大窗口；③ 数值为 0–255 整数域、四舍五入显示。所有计算在你的浏览器里逐像素真实进行，无任何预渲染图片。KDE 渲染公式需联网，离线打开时自动回退为 HTML 排版公式。</p>
+</section>
+
+<footer>心屿 · 演示集 · 双边滤波 · 本页为单文件交互演示，可下载离线打开</footer>
+<button class="to-top" id="toTop" aria-label="回到顶部">↑</button>
+
+<script>
+'use strict';
+/* ---------- 主题 ---------- */
+var __T='light';
+try{__T=localStorage.getItem('theme')||(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}catch(_){}
+document.documentElement.dataset.theme=__T;
+if(location.protocol==='file:'){var __bd=document.getElementById('backDemo');if(__bd)__bd.style.display='none';}
+try{window.addEventListener('storage',function(e){if(e&&e.key==='theme'){document.documentElement.dataset.theme=e.newValue||'light';}})}catch(_){}
+
+/* ---------- 工具 ---------- */
+function $(id){return document.getElementById(id)}
+function clamp(v,a,b){return v<a?a:(v>b?b:v)}
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+var IW=96,IH=64;
+
+/* ---------- 场景：暗条带 + 圆盘 + 渐变 ---------- */
+function baseScene(){
+  var a=new Float32Array(IW*IH);
+  for(var y=0;y<IH;y++)for(var x=0;x<IW;x++){
+    var v=90;
+    if(x<20)v=45;
+    var dx=x-60,dy=y-26;
+    if(dx*dx+dy*dy<169)v=175;
+    if(y>=48){v=90+(y-48)*3.2;if(v>190)v=190;}
+    a[y*IW+x]=v;
+  }
+  return a;
+}
+var BASE=baseScene();
+function noisyOf(sigma,seed){
+  var rnd=mulberry32(seed),a=new Float32Array(IW*IH);
+  for(var i=0;i<a.length;i++){
+    var u=Math.max(rnd(),1e-9),v2=rnd();
+    a[i]=clamp(BASE[i]+Math.sqrt(-2*Math.log(u))*Math.cos(6.2831853*v2)*sigma,0,255);
+  }
+  return a;
+}
+
+/* ---------- 滤波 ---------- */
+function gaussPixel(src,cx,cy,ss){
+  var R=Math.max(1,Math.round(2*ss)),inv=1/(2*ss*ss),I0=src[cy*IW+cx],sw=0,swi=0;
+  for(var dy=-R;dy<=R;dy++){var yy=cy+dy;if(yy<0||yy>=IH)continue;
+    for(var dx=-R;dx<=R;dx++){var xx=cx+dx;if(xx<0||xx>=IW)continue;
+      var w=Math.exp(-(dx*dx+dy*dy)*inv);sw+=w;swi+=w*src[yy*IW+xx];}}
+  return swi/sw;
+}
+function bfPixel(src,cx,cy,ss,sr){
+  var R=Math.max(1,Math.round(2*ss)),i2=1/(2*ss*ss),j2=1/(2*sr*sr),I0=src[cy*IW+cx],sw=0,swi=0;
+  for(var dy=-R;dy<=R;dy++){var yy=cy+dy;if(yy<0||yy>=IH)continue;
+    for(var dx=-R;dx<=R;dx++){var xx=cx+dx;if(xx<0||xx>=IW)continue;
+      var Iq=src[yy*IW+xx],dI=Iq-I0;
+      var w=Math.exp(-(dx*dx+dy*dy)*i2-dI*dI*j2);sw+=w;swi+=w*Iq;}}
+  return{out:swi/sw,W:sw};
+}
+function bfImage(src,ss,sr){
+  var out=new Float32Array(IW*IH);
+  for(var y=0;y<IH;y++)for(var x=0;x<IW;x++)out[y*IW+x]=bfPixel(src,x,y,ss,sr).out;
+  return out;
+}
+function gaussImage(src,ss){
+  var out=new Float32Array(IW*IH);
+  for(var y=0;y<IH;y++)for(var x=0;x<IW;x++)out[y*IW+x]=gaussPixel(src,x,y,ss);
+  return out;
+}
+function putGray(cv,arr,scale){
+  var g=cv.getContext('2d'),w=IW*scale,h=IH*scale;
+  if(cv.width!==w){cv.width=w;cv.height=h;}
+  var im=g.createImageData(w,h),d=im.data;
+  for(var y=0;y<h;y++)for(var x=0;x<w;x++){
+    var v=clamp(arr[((y/scale)|0)*IW+((x/scale)|0)],0,255)|0;
+    var o=(y*w+x)*4;d[o]=v;d[o+1]=v;d[o+2]=v;d[o+3]=255;
+  }
+  g.putImageData(im,0,0);
+}
+/* 指标：边缘保留（原始落差 90-45=45）与平坦区残留噪声 */
+function edgeKeep(img){
+  var l=0,r=0,n=0;
+  for(var y=8;y<42;y++){l+=img[y*IW+17]+img[y*IW+18];r+=img[y*IW+22]+img[y*IW+23];n+=2;}
+  return clamp(Math.abs(r/n-l/n)/45,0,1.2);
+}
+function flatStd(img){
+  var s=0,s2=0,n=0;
+  for(var y=5;y<45;y++)for(var x=30;x<47;x++){var v=img[y*IW+x];s+=v;s2+=v*v;n++;}
+  var m=s/n;return Math.sqrt(Math.max(0,s2/n-m*m));
+}
+
+/* ---------- §1 高斯之败 ---------- */
+(function(){
+  var seed=7,NS=18;
+  function render(){
+    var no=noisyOf(NS,seed);
+    var g=gaussImage(no,2),b=bfImage(no,2,30);
+    putGray($('cvGIn'),no,3);putGray($('cvGau'),g,3);putGray($('cvBf1'),b,3);
+    $('roGaE').textContent=(edgeKeep(g)*100).toFixed(0)+'%';
+    $('roBfE').textContent=(edgeKeep(b)*100).toFixed(0)+'%';
+    $('roNz').textContent=flatStd(no).toFixed(1)+' → '+flatStd(g).toFixed(1)+' / '+flatStd(b).toFixed(1);
+  }
+  $('btnGNewNoise').addEventListener('click',function(){seed=Math.floor(Math.random()*1e9);render();});
+  render();
+})();
+
+/* ---------- §3 权重放大镜 ---------- */
+(function(){
+  var cx=49,cy=26,ss=1.2,sr=25;
+  var cv=$('cvProbe');
+  function render(){
+    putGray(cv,BASE,3);
+    var g=cv.getContext('2d'),s=3;
+    g.strokeStyle='#ff4d4f';g.lineWidth=2;
+    g.strokeRect((cx-2)*s+.5,(cy-2)*s+.5,5*s,5*s);
+    g.fillStyle='#ff4d4f';g.fillRect(cx*s-1.5,cy*s-1.5,3,3);
+    var I0=BASE[cy*IW+cx],list=[];
+    for(var dy=-2;dy<=2;dy++)for(var dx=-2;dx<=2;dx++){
+      var Iq=BASE[(cy+dy)*IW+(cx+dx)],dI=Iq-I0;
+      var ws=Math.exp(-(dx*dx+dy*dy)/(2*ss*ss));
+      var wr=Math.exp(-dI*dI/(2*sr*sr));
+      list.push({dx:dx,dy:dy,Iq:Iq,dI:dI,ws:ws,wr:wr,w:ws*wr});
+    }
+    var hv='',hw='';
+    for(var r=0;r<5;r++){
+      hv+='<tr>';hw+='<tr>';
+      for(var c=0;c<5;c++){
+        var it=list[r*5+c],ctr=(it.dx===0&&it.dy===0);
+        hv+='<td'+(ctr?' class="center"':'')+'>'+Math.round(it.Iq)+'</td>';
+        var bg=(it.w<0.01&&!ctr)?'rgba(220,38,38,.16)':'rgba(94,162,255,'+(0.08+it.w*0.7).toFixed(3)+')';
+        hw+='<td'+(ctr?' class="center"':'')+' style="background:'+bg+'">'+(it.w>=0.01?it.w.toFixed(2):'·')+'</td>';
+      }
+      hv+='</tr>';hw+='</tr>';
+    }
+    $('tblVal').innerHTML='<caption>窗口亮度值（描边格为中心像素）</caption>'+hv;
+    $('tblW').innerHTML='<caption>总权重 = 空间核 × 值域核（0~1，"·"= &lt;0.01，红格 = 被开除）</caption>'+hw;
+    var others=list.filter(function(o){return o.dx!==0||o.dy!==0});
+    var sorted=others.slice().sort(function(a,b){return b.w-a.w});
+    var top=sorted[0],mid=sorted[Math.floor(sorted.length/2)],dead=sorted[sorted.length-1];
+    function eq(o){
+      var keep=o.w>=0.01;
+      return '邻居 ('+(cx+o.dx)+','+(cy+o.dy)+')：I='+Math.round(o.Iq)+'，ΔI='+Math.round(Math.abs(o.dI))+
+        ' → 空间核 '+o.ws.toFixed(2)+' × 值域核 '+o.wr.toFixed(3)+' = 权重 '+o.w.toFixed(3)+
+        (keep?' <b class="live">参与平均</b>':' <b class="dead">≈开除</b>');
+    }
+    $('eqBox').innerHTML='<div class="eq-line"><b>权重最大</b> '+eq(top)+'</div>'+
+      '<div class="eq-line"><b>权重中等</b> '+eq(mid)+'</div>'+
+      '<div class="eq-line"><b>权重最小</b> '+eq(dead)+'</div>';
+    var sw=0,swi=0,nv=0;
+    list.forEach(function(o){sw+=o.w;swi+=o.w*o.Iq;if(o.w>=0.01)nv++;});
+    $('roSw').textContent=sw.toFixed(3);
+    $('roSwi').textContent=Math.round(swi);
+    $('roOut').textContent=Math.round(swi/sw);
+    $('roNv').textContent=nv+' / 25';
+  }
+  cv.addEventListener('click',function(e){
+    var r=cv.getBoundingClientRect();
+    cx=clamp(Math.floor((e.clientX-r.left)/r.width*IW),2,IW-3);
+    cy=clamp(Math.floor((e.clientY-r.top)/r.height*IH),2,IH-3);
+    render();
+  });
+  $('btnOnEdge').addEventListener('click',function(){cx=49;cy=26;render();});
+  $('btnOnFlat').addEventListener('click',function(){cx=38;cy=18;render();});
+  $('btnOnDot').addEventListener('click',function(){cx=60;cy=26;render();});
+  $('rngPs').addEventListener('input',function(){ss=+this.value;$('lblPs').textContent=ss.toFixed(1);render();});
+  $('rngPr').addEventListener('input',function(){sr=+this.value;$('lblPr').textContent=sr;render();});
+  render();
+})();
+
+/* ---------- §4 逐像素工作动画 ---------- */
+(function(){
+  var ss=2,sr=25;
+  var src=noisyOf(15,42);
+  var out=new Float32Array(IW*IH),pos=0,timer=null,spd=6,TOTAL=IW*IH;
+  var cvIn=$('cvAni'),cvOut=$('cvAno');
+  function draw(){
+    putGray(cvIn,src,3);
+    var g=cvIn.getContext('2d'),x=pos%IW,y=(pos/IW)|0;
+    g.strokeStyle='#ff4d4f';g.lineWidth=2;
+    g.strokeRect((x-2)*3+.5,(y-2)*3+.5,5*3,5*3);
+    var arr=new Float32Array(IW*IH);
+    for(var i=0;i<TOTAL;i++)arr[i]=i<pos?out[i]:26;
+    putGray(cvOut,arr,3);
+    if(pos>0){
+      $('aniPct').textContent=Math.round(pos/TOTAL*100)+'%';
+      var lx=(pos-1)%IW,ly=((pos-1)/IW)|0;
+      $('aniPix').textContent='('+lx+','+ly+')→'+Math.round(out[pos-1]);
+    }else{$('aniPct').textContent='0%';$('aniPix').textContent='—';}
+  }
+  function stop(){if(timer){clearInterval(timer);timer=null;}}
+  function step(n){
+    var c=n||spd;
+    for(var k=0;k<c&&pos<TOTAL;k++){
+      var x=pos%IW,y=(pos/IW)|0;
+      out[pos]=bfPixel(src,x,y,ss,sr).out;pos++;
+    }
+    draw();
+    if(pos>=TOTAL){stop();$('btnPlay').textContent='▶ 已完成，点我重来';}
+  }
+  function reset(){stop();pos=0;out=new Float32Array(IW*IH);$('btnPlay').textContent='▶ 播放';draw();}
+  $('btnPlay').addEventListener('click',function(){
+    if(pos>=TOTAL)reset();
+    if(timer){stop();this.textContent='▶ 播放';}
+    else{timer=setInterval(function(){step(spd)},30);this.textContent='⏸ 暂停';}
+  });
+  $('btnStep').addEventListener('click',function(){
+    stop();$('btnPlay').textContent='▶ 播放';
+    if(pos>=TOTAL)reset();
+    step(1);
+  });
+  $('btnReset4').addEventListener('click',reset);
+  var spds=document.querySelectorAll('.spd');
+  spds.forEach(function(b){b.addEventListener('click',function(){
+    spds.forEach(function(x){x.classList.remove('on')});b.classList.add('on');
+    spd=+b.dataset.s;
+  })});
+  draw();
+})();
+
+/* ---------- §6 全图对比实验 ---------- */
+(function(){
+  var t=null;
+  function render(){
+    var ns=+$('rngN6').value,ss=+$('rngS6').value,sr=+$('rngR6').value;
+    $('lblN6').textContent=ns;$('lblS6').textContent=ss;$('lblR6').textContent=sr;
+    $('rn6').textContent=ns;$('rs6').textContent=ss;$('rs6b').textContent=ss;$('rr6').textContent=sr;
+    var no=noisyOf(ns,42);
+    var g=gaussImage(no,ss),b=bfImage(no,ss,sr);
+    putGray($('cv6a'),no,3);putGray($('cv6g'),g,3);putGray($('cv6b'),b,3);
+    var si=Math.max(flatStd(no),0.001);
+    var dg=si/Math.max(flatStd(g),0.001),db=si/Math.max(flatStd(b),0.001);
+    var ek=edgeKeep(b);
+    $('ro6g').textContent=dg.toFixed(1)+'×';
+    $('ro6b').textContent=db.toFixed(1)+'×';
+    $('ro6e').textContent=Math.round(ek*100)+'%';
+    var vd=$('vd6'),msg,cls;
+    if(ns<2){msg='先把噪声调上来——没有噪声时三种图几乎一样，双边的优势无从谈起。';cls='';}
+    else if(sr<6||db<1.5){msg='σr 太小（'+sr+'）：值域核把几乎所有邻居拒之门外，输出≈原图，基本没平滑。把它调到噪声幅度附近再看看。';cls='warn1';}
+    else if(ek<0.72){msg='σr 太大（'+sr+'）：值域核形同虚设，双边已经退化成高斯——边缘保留只剩 '+Math.round(ek*100)+'%。把 σr 往回收，或调大 σs 换取更强平滑。';cls='bad';}
+    else{msg='刚刚好：平坦区降噪 '+db.toFixed(1)+' 倍，边缘保留 '+Math.round(ek*100)+'%，渐变区的层次也还在——"σr ≈ 噪声幅度"这条经验法则正在起作用。';cls='good';}
+    vd.textContent=msg;vd.className='verdict '+cls;
+  }
+  ['rngN6','rngS6','rngR6'].forEach(function(id){
+    $(id).addEventListener('input',function(){clearTimeout(t);t=setTimeout(render,140);});
+  });
+  $('btnMagic').addEventListener('click',function(){
+    var ns=Math.max(15,+$('rngN6').value);
+    $('rngN6').value=ns;$('rngR6').value=ns;$('rngS6').value=2;
+    render();
+  });
+  render();
+})();
+
+/* ---------- 测验 ---------- */
+(function(){
+  document.querySelectorAll('.btns.quiz').forEach(function(q){
+    var note=document.createElement('p');
+    note.className='note';note.style.display='none';note.textContent=q.dataset.exp||'';
+    q.parentNode.insertBefore(note,q.nextSibling);
+    q.querySelectorAll('.quiz-opt').forEach(function(b){
+      b.addEventListener('click',function(){
+        q.querySelectorAll('.quiz-opt').forEach(function(x){x.classList.remove('right','wrong')});
+        if(b.dataset.k===q.dataset.a){b.classList.add('right');}
+        else{b.classList.add('wrong');var r=q.querySelector('[data-k="'+q.dataset.a+'"]');if(r)r.classList.add('right');}
+        note.style.display='';
+      });
+    });
+  });
+})();
+
+/* ---------- KaTeX（离线自动回退） ---------- */
+(function(){
+  function renderMath(){
+    if(!window.katex)return;
+    document.querySelectorAll('.formula[data-tex]').forEach(function(el){
+      if(el.dataset.done)return;el.dataset.done='1';
+      try{katex.render(el.dataset.tex,el,{displayMode:el.classList.contains('dm'),throwOnError:false});}catch(_){}
+    });
+  }
+  window.addEventListener('load',renderMath);
+  setTimeout(renderMath,400);setTimeout(renderMath,1500);
+})();
+
+/* ---------- 目录高亮 + 回到顶部 ---------- */
+(function(){
+  var links=Array.prototype.slice.call(document.querySelectorAll('nav.tocbar a[href^="#"]'));
+  var secs=links.map(function(a){return document.getElementById(a.getAttribute('href').slice(1))}).filter(Boolean);
+  function onScroll(){
+    var cur=-1;
+    for(var i=0;i<secs.length;i++){if(secs[i].getBoundingClientRect().top<120)cur=i;}
+    links.forEach(function(a,i){a.classList.toggle('on',i===cur)});
+    $('toTop').classList.toggle('show',window.scrollY>600);
+  }
+  window.addEventListener('scroll',onScroll,{passive:true});
+  $('toTop').addEventListener('click',function(){window.scrollTo({top:0,behavior:'smooth'})});
+  onScroll();
+})();
+</script>
+</div>
+</body>
+</html>

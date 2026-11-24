@@ -31,4 +31,13 @@ export const demos: DemoCard[] = [
     tags: ['ISP', 'MTF', '科普'],
     ready: true,
   },
+  {
+    slug: 'bilateral-lab',
+    title: '双边滤波：既平滑又保边',
+    description: '经典算法演绎：两个高斯核的乘法如何炼成保边平滑，权重放大镜拆开中间计算，逐像素动画看滤波窗口工作，兼讲 1998 年诞生到 HDRNet 的三十年',
+    emoji: '🎨',
+    file: 'bilateral-lab.html',
+    tags: ['ISP', '图像处理', '科普'],
+    ready: true,
+  },
 ];
