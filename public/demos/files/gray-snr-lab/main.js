@@ -7,7 +7,9 @@
 
   /* ---------- 主题同步 / KaTeX / 返回与顶部 ---------- */
   (function () {
-    var t = localStorage.getItem('theme') ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    var t = null;
+    try { t = localStorage.getItem('theme'); } catch (e) { /* 防跟踪浏览器在 iframe 里禁 localStorage（SecurityError），不能让初始化崩掉 */ }
+    if (t == null) t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     document.documentElement.dataset.theme = t;
     if (location.protocol === 'file:') { $('backDemo').style.display = 'none'; }
     addEventListener('storage', function (e) { if (e.key === 'theme' && e.newValue) document.documentElement.dataset.theme = e.newValue; });
