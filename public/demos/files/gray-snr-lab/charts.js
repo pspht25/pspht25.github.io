@@ -149,52 +149,104 @@
     ctx.fillStyle = P.FG; ctx.font = '600 11px sans-serif'; ctx.textAlign = 'left';
     ctx.fillText('整卡定位（点击选 patch）', mx, 14);
     ctx.fillText('patch #' + st.sel + '  d=' + p.d.toFixed(2), mx + 4, my + 14);
-    // 右：放大 64×64 → 340×255 pixelated
+    // 右：放大 64×64 源区 → 等比正方形目标区（zw2×zw2），x/y 同倍率——绿/红框才贴得住色块
     var zx = mx + mw + 26, zy = my, zw = cv.width - zx - 8, zh = mh;
-    var zoom = 5, zw2 = Math.min(zw, 350);
+    var zw2 = Math.min(zw, zh, 350);
     var cx0 = Math.round(p.cx), cy0 = Math.round(p.cy);
     var half = 32;
     if (S.shotCanvas) {
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(S.shotCanvas, cx0 - half, cy0 - half, half * 2, half * 2, zx, zy, zw2, zh);
+      ctx.drawImage(S.shotCanvas, cx0 - half, cy0 - half, half * 2, half * 2, zx, zy, zw2, zw2);
       ctx.imageSmoothingEnabled = true;
     }
-    ctx.strokeStyle = P.BRD; ctx.strokeRect(zx, zy, zw2, zh);
-    // patch 边界（绿）与 ROI 采样框（红）
+    ctx.strokeStyle = P.BRD; ctx.strokeRect(zx, zy, zw2, zw2);
+    // patch 边界（绿）与 ROI 采样框（红）：与 sim.js patchAt/sampleROI 同款舍入，逐像素贴合
     var cs = zw2 / (half * 2);
     var ps = S.PSZ * cs;
     ctx.strokeStyle = P.OK; ctx.lineWidth = 1.2;
-    ctx.strokeRect(zx + (cx0 - S.PSZ / 2 - (cx0 - half)) * cs, zy + (cy0 - S.PSZ / 2 - (cy0 - half)) * cs, ps, ps);
+    ctx.strokeRect(zx + (Math.round(p.cx - S.PSZ / 2) - (cx0 - half)) * cs, zy + (Math.round(p.cy - S.PSZ / 2) - (cy0 - half)) * cs, ps, ps);
     var fs = S.PSZ * st.FILL * cs;
     ctx.strokeStyle = P.WARN; ctx.lineWidth = 1.6;
-    ctx.strokeRect(zx + (p.cx - fs / 2 / cs - (cx0 - half)) * cs, zy + (p.cy - fs / 2 / cs - (cy0 - half)) * cs, fs, fs);
-    ctx.fillStyle = P.MUT; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
-    ctx.fillText('放大 ×' + zoom + '：绿框=patch 边界，红框=ROI 采样框（fill=' + st.FILL.toFixed(2) + '）', zx, 14);
+    ctx.strokeRect(zx + (Math.round(p.cx - S.PSZ * st.FILL / 2) - (cx0 - half)) * cs, zy + (Math.round(p.cy - S.PSZ * st.FILL / 2) - (cy0 - half)) * cs, fs, fs);
+    ctx.fillStyle = P.FG; ctx.font = '600 11px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText('放大 ×' + (zw2 / (half * 2)).toFixed(1) + '：绿框=patch 边界，红框=ROI 采样框（fill=' + st.FILL.toFixed(2) + '）', zx, 14);
+    // 右侧留白：patch 信息小栏
+    if (zw - zw2 > 60) {
+      var ix = zx + zw2 + 12, iy = my + 18;
+      ctx.fillStyle = P.FG; ctx.font = '600 11px sans-serif';
+      ctx.fillText('patch #' + st.sel, ix, iy);
+      ctx.fillStyle = P.MUT; ctx.font = '10px sans-serif';
+      ctx.fillText('密度 d = ' + p.d.toFixed(2), ix, iy + 18);
+      ctx.fillText('反射率 R = ' + p.R.toFixed(3), ix, iy + 34);
+      ctx.fillText('中心 = ' + cx0 + ', ' + cy0 + ' px', ix, iy + 50);
+      ctx.fillText('patch 边长 ' + S.PSZ + ' px', ix, iy + 66);
+      ctx.fillText('ROI ' + Math.round(S.PSZ * st.FILL) + ' px · 144 点', ix, iy + 82);
+    }
   };
 
-  /* ---------- ④ OECF ---------- */
+  /* ---------- ⑤ OECF（DN 域；四区段背景带 + γ=1 线性参照）---------- */
+  var XO = [-2.62, 0.18]; // OECF 专用域：需容纳 L_min（默认参数 log10≈-2.44）
   D.oecf = function (cv, meas, fitGamma) {
-    var st = S.st;
-    var c = mkChart(cv, XD, [0, 260], { xlog: true, title: 'OECF：实测 patch（点+误差条） vs 理论曲线', xlabel: 'log₁₀ L（相对亮度）', ylabel: 'DN' });
-    // 理论曲线
+    var st = S.st, dr = S.drCalc();
+    var lgMin = Math.log10(dr.Lmin), lgSat = Math.log10(dr.Lsat);
+    var c = mkChart(cv, XO, [0, 260], { xlog: true, title: 'OECF：实测 patch（点+误差条） vs 理论曲线——从底噪到饱和四区段', xlabel: 'log₁₀ L（相对亮度）', ylabel: 'DN' });
+    // 区段背景带：①底噪区（L<L_min）②线性工作区（L_min~L_sat）④饱和区（L>L_sat）
+    // 真实相机在 ②④ 之间还有③肩部（满阱渐满的软压缩）；本页模型是硬裁剪，没有柔和的肩
+    function band(lg0, lg1, fill) {
+      var xa = Math.max(XO[0], lg0), xb = Math.min(XO[1], lg1);
+      if (xb <= xa) return;
+      c.ctx.fillStyle = fill;
+      c.ctx.fillRect(c.X(Math.pow(10, xa)), c.y1, c.X(Math.pow(10, xb)) - c.X(Math.pow(10, xa)), c.y0 - c.y1);
+    }
+    band(XO[0], lgMin, 'rgba(22,163,74,.10)');
+    band(lgMin, lgSat, 'rgba(37,99,235,.09)');
+    band(lgSat, XO[1], 'rgba(220,38,38,.10)');
+    // 区段标签
+    c.ctx.font = '600 10px sans-serif'; c.ctx.textAlign = 'center';
+    function segTag(lg0, lg1, txt, col, align) {
+      var xa = Math.max(XO[0], lg0), xb = Math.min(XO[1], lg1);
+      if (xb <= xa) return;
+      var mid = (c.X(Math.pow(10, xa)) + c.X(Math.pow(10, xb))) / 2;
+      if (align === 'r') mid = Math.min(mid, c.x1 - 30);
+      c.ctx.fillStyle = col;
+      c.ctx.fillText(txt, mid, c.y1 + 22);
+    }
+    segTag(XO[0], lgMin, '① 底噪区', c.P.OK);
+    segTag(lgMin, lgSat, '② 线性工作区', c.P.ACC);
+    segTag(lgSat, XO[1], '④ 饱和区', c.P.WARN, 'r');
+    // 理论 gamma 曲线
     var th = [];
     for (var i = 0; i <= 60; i++) {
-      var L = Math.pow(10, XD[0] + (XD[1] - XD[0]) * i / 60);
+      var L = Math.pow(10, XO[0] + (XO[1] - XO[0]) * i / 60);
       var dn = 255 * Math.pow(Math.min(L * st.EXPO, 1), 1 / st.GAMMA);
       th.push([L, dn]);
     }
     line(c, th, c.P.MUT, [5, 4], 1.6);
-    // 实测点 + 误差条
+    // γ=1 理想线性参照（完美传感器，无色调曲线）
+    var lin = [];
+    for (var i2 = 0; i2 <= 40; i2++) {
+      var L2 = Math.pow(10, XO[0] + (XO[1] - XO[0]) * i2 / 40);
+      lin.push([L2, 255 * Math.min(L2 * st.EXPO, 1)]);
+    }
+    line(c, lin, c.P.AMB, [2, 3], 1.3);
+    // 区段边界
+    vline(c, dr.Lmin, c.P.OK, 'L_min（SNR=1）', [3, 3]);
+    vline(c, dr.Lsat, c.P.WARN, 'L_sat', [3, 3]);
+    // 实测点 + 误差条（DN 域：线性均值/σ 先加减再过 OECF）
     meas.forEach(function (m) {
-      var dn = 255 * m.m, err = m.sd > 0 && m.m > 0 ? dn * (m.sd / m.m) : 0;
+      if (m.m <= 0) return;
+      var dn = 255 * Math.pow(m.m, 1 / st.GAMMA);
+      var dnHi = 255 * Math.pow(m.m + m.sd, 1 / st.GAMMA);
+      var dnLo = 255 * Math.pow(Math.max(m.m - m.sd, 0), 1 / st.GAMMA);
       var x = c.X(m.L);
       c.ctx.strokeStyle = c.P.ACC; c.ctx.lineWidth = 1;
-      c.ctx.beginPath(); c.ctx.moveTo(x, c.Y(dn - err)); c.ctx.lineTo(x, c.Y(dn + err)); c.ctx.stroke();
+      c.ctx.beginPath(); c.ctx.moveTo(x, c.Y(dnLo)); c.ctx.lineTo(x, c.Y(dnHi)); c.ctx.stroke();
       dot(c, m.L, dn, c.P.ACC, 4.5);
     });
     legend(c, [
-      { t: '理论 DN=255(L·E)^(1/γ)，γ=' + st.GAMMA.toFixed(2), color: c.P.MUT, dash: true },
-      { t: '实测（误差条=patch 内 σ 映射）', color: c.P.ACC }
+      { t: '理论 γ=' + st.GAMMA.toFixed(2) + '：DN=255(L·E)^(1/γ)', color: c.P.MUT, dash: true },
+      { t: 'γ=1 线性参照（完美传感器）', color: c.P.AMB, dash: true },
+      { t: '实测（误差条=patch 内 σ）', color: c.P.ACC }
     ]);
     if (fitGamma) {
       c.ctx.fillStyle = c.P.OK; c.ctx.font = '600 12px sans-serif'; c.ctx.textAlign = 'right';
@@ -202,7 +254,73 @@
     }
   };
 
-  /* ---------- ⑤ SNR 曲线 ---------- */
+  /* ---------- ④ 灰阶条图：理论 vs 实测双排色条 ---------- */
+  D.swatch = function (cv, meas, th) {
+    var st = S.st;
+    var ctx = cv.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    var P = palette();
+    // 按 d 升序（亮→暗）展示；ord[k] = patch 原索引
+    var ord = S.PATCHES.map(function (p) { return p.i; })
+      .sort(function (a, b) { return S.PATCHES[a].d - S.PATCHES[b].d; });
+    var n = S.PATCHES.length;
+    var cols = n + 1; // + 背景参考块
+    var cw = cv.width;
+    var mx = 14, gap = 5;
+    var bw = (cw - mx * 2 - gap * cols) / cols, bh = 52;
+    var yD = 40, y1 = 43, y2 = y1 + bh + 14, yDl = y2 + bh + 12;
+    function gcol(dn) {
+      var g = Math.round(Math.min(Math.max(dn, 0), 255));
+      return 'rgb(' + g + ',' + g + ',' + g + ')';
+    }
+    function tcol(dn) { return dn > 140 ? P.FG : '#f4f6f8'; }
+    // 顶部说明
+    ctx.textAlign = 'left';
+    ctx.fillStyle = P.MUT; ctx.font = '10px sans-serif';
+    ctx.fillText('上排 理论灰阶（设计密度 → 理想相机，块内数字 = DN）｜下排 实测灰阶（当前帧 ROI 均值）', mx, 14);
+    ctx.textAlign = 'right';
+    ctx.fillText('|Δ|≤2 正常 / ≤8 注意 / >8 偏差大', cw - mx, 14);
+    ctx.textAlign = 'center';
+    ord.forEach(function (pi, k) {
+      var x = mx + k * (bw + gap);
+      var p = S.PATCHES[pi], t = th[pi], mm = meas[pi];
+      var dnM = mm.m > 0 ? 255 * Math.pow(mm.m, 1 / st.GAMMA) : 0;
+      var dDn = dnM - t.dn;
+      ctx.fillStyle = P.MUT; ctx.font = '9px sans-serif';
+      ctx.fillText(p.d.toFixed(2), x + bw / 2, yD);
+      // 理论块
+      ctx.fillStyle = gcol(t.dn); ctx.fillRect(x, y1, bw, bh);
+      ctx.fillStyle = tcol(t.dn); ctx.font = '600 10px sans-serif';
+      ctx.fillText(String(Math.round(t.dn)), x + bw / 2, y1 + bh / 2 + 4);
+      // 实测块
+      ctx.fillStyle = gcol(dnM); ctx.fillRect(x, y2, bw, bh);
+      ctx.fillStyle = tcol(dnM); ctx.font = '600 10px sans-serif';
+      ctx.fillText(String(Math.round(dnM)), x + bw / 2, y2 + bh / 2 + 4);
+      // Δ 着色
+      var ad = Math.abs(dDn);
+      ctx.fillStyle = ad <= 2 ? P.MUT : (ad <= 8 ? P.AMB : P.WARN); ctx.font = '9px sans-serif';
+      ctx.fillText((dDn >= 0 ? '+' : '') + dDn.toFixed(1), x + bw / 2, yDl);
+      // 选中标记
+      if (pi === st.sel) {
+        ctx.strokeStyle = P.ACC; ctx.lineWidth = 2;
+        ctx.strokeRect(x - 1.5, y1 - 1.5, bw + 3, bh + 3);
+        ctx.strokeRect(x - 1.5, y2 - 1.5, bw + 3, bh + 3);
+      }
+    });
+    // 背景参考块（理论；虚线框，非测量对象）
+    var xb = mx + n * (bw + gap), bgDn = S.bgTheory();
+    ctx.fillStyle = gcol(bgDn); ctx.fillRect(xb, y1, bw, bh);
+    ctx.strokeStyle = P.MUT; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+    ctx.strokeRect(xb, y1, bw, bh); ctx.setLineDash([]);
+    ctx.fillStyle = bgDn > 140 ? P.FG : '#f4f6f8'; ctx.font = '600 10px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(String(Math.round(bgDn)), xb + bw / 2, y1 + bh / 2 + 4);
+    ctx.fillStyle = P.MUT; ctx.font = '9px sans-serif';
+    ctx.fillText('0.62', xb + bw / 2, yD);
+    ctx.fillText('背景', xb + bw / 2, y2 + bh / 2 - 4);
+  };
+
+  /* ---------- ⑥ SNR 曲线 ---------- */
   D.snr = function (cv, flat, raw) {
     var st = S.st, lref = S.lref(), lsnr = 0.13 * lref;
     var all = flat.concat(raw || []);
@@ -232,7 +350,7 @@
     return snr13;
   };
 
-  /* ---------- ⑥ 多帧三曲线 ---------- */
+  /* ---------- ⑦ 多帧三曲线 ---------- */
   D.multi = function (cv, ms) {
     var c = mkChart(cv, XD, [0, 30], { xlog: true, title: '噪声分离：SNR_t / SNR_s / SNR_total（N=' + S.st.N + ' 帧）', xlabel: 'log₁₀ L', ylabel: 'SNR' });
     line(c, ms.map(function (m) { return [m.L, m.st > 0 ? m.mean / m.st : 0]; }), c.P.OK, null, 2);
@@ -278,7 +396,7 @@
     render(cvA, 1); render(cvB, N);
   };
 
-  /* ---------- ⑦ 动态范围 ---------- */
+  /* ---------- ⑧ 动态范围 ---------- */
   D.dr = function (cv, msTemporal) {
     var st = S.st, dr = S.drCalc();
     var xr = [-3.4, 0.2], yr = [-5, 42];
@@ -303,7 +421,7 @@
     ]);
   };
 
-  /* ---------- ⑧ py2js 输出 ---------- */
+  /* ---------- ⑨ py2js 输出 ---------- */
   D.pg = function (cv, pts, lsnr, snr13) {
     if (!pts || !pts.length) return;
     var ymax = 10;

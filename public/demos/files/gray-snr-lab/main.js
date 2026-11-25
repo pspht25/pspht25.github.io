@@ -61,7 +61,7 @@
   function fitGamma(meas) {
     var sx = 0, sy = 0, sxx = 0, sxy = 0, n = 0;
     meas.forEach(function (m) {
-      var dn = 255 * m.m;
+      var dn = 255 * Math.pow(m.m, 1 / S.st.GAMMA);   // DN 域（原用线性域值，斜率恒 1，γ 拟合失效）
       if (dn < 3 || dn > 253) return;
       var x = Math.log10(m.L), y = Math.log10(Math.max(dn, 1e-9));
       sx += x; sy += y; sxx += x * x; sxy += x * y; n++;
@@ -69,6 +69,26 @@
     if (n < 2) return 0;
     var slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
     return slope > 0 ? 1 / slope : 0;
+  }
+
+  /* ---------- ④ 灰阶账目表（按 d 升序 亮→暗） ---------- */
+  function fillTone(tbl, th, meas) {
+    var ord = S.PATCHES.map(function (p) { return p.i; })
+      .sort(function (a, b) { return S.PATCHES[a].d - S.PATCHES[b].d; });
+    var gam = S.st.GAMMA;
+    var html = '<tr><th>#</th><th>密度 d</th><th>反射率 R</th><th>渐晕 V</th><th>线性信号 S</th><th>理论 DN</th><th>实测 DN</th><th>Δ</th></tr>';
+    ord.forEach(function (pi) {
+      var p = S.PATCHES[pi], t = th[pi], mm = meas[pi];
+      var dnM = mm.m > 0 ? 255 * Math.pow(mm.m, 1 / gam) : 0;
+      var dDn = dnM - t.dn;
+      var ad = Math.abs(dDn);
+      var cls = ad <= 2 ? '' : (ad <= 8 ? ' style="color:var(--amber,#d97706)"' : ' style="color:var(--warn,#dc2626)"');
+      html += '<tr><td>' + pi + '</td><td>' + p.d.toFixed(2) + '</td><td>' + t.R.toFixed(4) +
+        '</td><td>' + t.V.toFixed(3) + '</td><td>' + t.S.toFixed(4) +
+        '</td><td>' + t.dn.toFixed(1) + '</td><td>' + dnM.toFixed(1) +
+        '</td><td' + cls + '>' + (dDn >= 0 ? '+' : '') + dDn.toFixed(1) + '</td></tr>';
+    });
+    tbl.innerHTML = html;
   }
 
   /* ---------- 主更新（shoot 后）---------- */
@@ -97,17 +117,21 @@
     } else {
       wn.innerHTML = '点左边缩略图可以换 patch；右图红框是当前 fill 的采样框，绿框是 patch 边界。';
     }
-    /* ④ OECF */
+    /* ④ 灰阶：理论账目表 + 双排条图（与 ⑤ OECF 共用同一份实测） */
     var meas = S.snrCurve(st.FILL, false);
+    var thP = S.patchTheory();
+    fillTone($('toneTable'), thP, meas);
+    D.swatch($('swatchCv'), meas, thP);
+    /* ⑤ OECF（DN 域） */
     var fg = fitGamma(meas);
     $('roSetGamma').textContent = st.GAMMA.toFixed(2);
     $('roFitGamma').textContent = fg > 0 ? fg.toFixed(2) : '—';
     var nClip = 0;
-    meas.forEach(function (m) { if (255 * m.m >= 254) nClip++; });
+    meas.forEach(function (m) { if (m.m > 0 && 255 * Math.pow(m.m, 1 / st.GAMMA) >= 254) nClip++; });
     $('roClip').textContent = nClip > 0 ? nClip + ' 个（已饱和！）' : '0';
     D.oecf($('oecfCv'), meas, fg);
-    /* ⑤ SNR */
-    var flatC = S.snrCurve(st.FILL, true), rawC = S.snrCurve(st.FILL, false);
+    /* ⑥ SNR */
+    var flatC = S.snrCurve(st.FILL, true), rawC = meas;   // 未去低频实测 = ④⑤ 已算过的 meas
     var snr13 = D.snr($('snrCv'), flatC, rawC);
     var lref = S.lref(), lsnr = 0.13 * lref;
     $('roLref').textContent = lref.toFixed(4);
@@ -117,7 +141,7 @@
     var peak = 0;
     flatC.forEach(function (m) { if (m.snr > peak) peak = m.snr; });
     $('roPeak').textContent = peak > 0 ? peak.toFixed(2) : '—';
-    /* ⑥ 多帧 */
+    /* ⑦ 多帧 */
     var ms = S.multiStats(st.FILL, st.N);
     D.multi($('multiCv'), ms);
     var mSel = ms[st.sel];
@@ -128,7 +152,7 @@
     D.avgPair($('avgA'), $('avgB'), st.N);
     $('avgLabelA').textContent = '单帧（N=1）· patch d=' + S.PATCHES[st.sel].d.toFixed(2);
     $('avgLabelB').textContent = 'N 帧平均（N=' + st.N + '）· 同一 patch';
-    /* ⑦ DR */
+    /* ⑧ DR */
     D.dr($('drCv'), ms);
     var dr = S.drCalc();
     $('roLsat').textContent = dr.Lsat.toFixed(4);
@@ -180,7 +204,7 @@
   });
 
   /* ============================================================
-     ⑧ py2js 实操区
+     ⑨ py2js 实操区
   ============================================================ */
   var TPL_BASE = [
     'import math',

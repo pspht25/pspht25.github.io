@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>环形灰阶卡：SNR 是怎么测出来的 · 相机 IQ 测量演绎</title>
-<meta name="description" content="Imatest 式相机图像质量测量演绎：环形灰阶卡为什么长那样、patch ROI 怎么抓、OECF 与 SNR 怎么算、0.13 从哪来、多帧怎么分离时间噪声与固定模式噪声，附 py2js 全流水线实操。">
+<meta name="description" content="Imatest 式相机图像质量测量演绎：15/20 灰阶块图卡、patch ROI 抓取、灰阶逐块计算与色条图、OECF 四区段、SNR 与 0.13、多帧噪声分离、动态范围，附 py2js 全流水线实操。">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <link rel="stylesheet" href="style.css">
@@ -12,14 +12,14 @@
 <body>
 <nav class="tocbar"><div class="in">
   <a class="back" id="backDemo" href="/demos/">← 演示集</a>
-  <a href="#s1">① 图卡</a><a href="#s2">② 成像</a><a href="#s3">③ 抓取</a><a href="#s4">④ OECF</a><a href="#s5">⑤ SNR</a><a href="#s6">⑥ 多帧</a><a href="#s7">⑦ 动态范围</a><a href="#s8">⑧ 实操</a><a href="#refs">参考</a>
+  <a href="#s1">① 图卡</a><a href="#s2">② 成像</a><a href="#s3">③ 抓取</a><a href="#s4">④ 灰阶</a><a href="#s5">⑤ OECF</a><a href="#s6">⑥ SNR</a><a href="#s7">⑦ 多帧</a><a href="#s8">⑧ 动态范围</a><a href="#s9">⑨ 实操</a><a href="#refs">参考</a>
 </div></nav>
 
 <div class="wrap">
 <header class="hero">
   <span class="emoji">🎯</span>
   <h1>环形灰阶卡：SNR 是怎么测出来的</h1>
-  <p class="sub">Imatest 式相机 IQ 测量演绎：把「已知亮度」摆进场景，从相机的输出数字反推它的性格——灰阶怎么抓、OECF 怎么画、信噪比怎么算、那个神秘的 <b>0.13</b> 从哪来、多帧怎么把两种噪声分开。本页与其他演示页完全独立。</p>
+  <p class="sub">Imatest 式相机 IQ 测量演绎：把「已知亮度」摆进场景，从相机的输出数字反推它的性格——灰阶怎么抓、每一块的灰度怎么算、OECF 怎么画、信噪比怎么算、那个神秘的 <b>0.13</b> 从哪来、多帧怎么把两种噪声分开。本页与其他演示页完全独立。</p>
   <div class="badges"><span class="badge">ISO 14524 OECF</span><span class="badge">ISO 15739 Noise</span><span class="badge">Imatest Stepchart / Color-Tone</span><span class="badge">py2js 全流水线实操</span></div>
 </header>
 
@@ -37,12 +37,105 @@
       <tr><td><b>ISO 15739 noise target</b> <span class="tag">本页主角</span></td><td>近椭圆：12 外圈 + 3 中心</td><td>15</td><td>0.1 ~ 2.0</td><td>大面积噪声 / SNR / 动态范围</td></tr>
       <tr><td>36-patch DR chart</td><td>近圆形</td><td>36</td><td>0.03 ~ 6（透射）</td><td>高动态范围，约 120dB / 40 档</td></tr>
     </table>
-    <p class="note">同一 20-patch 几何有五种对比度变体：低 20:1、标准 80:1、160:1（eSFR ISO 用）、高 1000:1，以及 Image Engineering TE241 透射卡（12600:1，密度到 4.1）。TE264 与其几何完全一致。</p>
+    <p class="note">20-patch 圆形 OECF 的对比度变体（Imatest 官方）：</p>
+    <table class="patch-table">
+      <tr><th>变体</th><th>对比度</th><th>最暗密度</th><th>说明</th></tr>
+      <tr><td>Low</td><td>20:1</td><td>1.4</td><td>低反差场景</td></tr>
+      <tr><td>Standard</td><td>80:1</td><td>2.0</td><td>通用反射卡</td></tr>
+      <tr><td>Normal</td><td>160:1</td><td>2.3</td><td>eSFR ISO 卡中心使用</td></tr>
+      <tr><td>High</td><td>1000:1</td><td>3.1</td><td>更高反差</td></tr>
+      <tr><td>TE241（透射）</td><td>12600:1</td><td>4.1</td><td>需灯箱 + 参考文件</td></tr>
+    </table>
+    <p class="note">Image Engineering 的 TE264 与 20-patch 的几何和 patch 顺序完全一致。</p>
   </div>
   <div class="grid3">
     <div class="card"><h3>🎯 圆环排布：防渐晕</h3><p>镜头渐晕从中心向外变暗。<b>一条直线排 patch，同密度的块会因位置不同而读数不同</b>；环形排列让同环 patch 离中心等距，渐晕变成环内对称的偏置——建模得掉、去除得掉。36-patch DR 卡官方说法就是「近乎圆形排列使渐晕影响最小」。</p></div>
     <div class="card"><h3>📏 patch 大：样本多</h3><p>噪声是统计量，样本越多估计越稳。噪声卡的 patch 特意做得比分辨率卡大——单帧内就有几百个样本，配合标准要求的 <b>≥8 帧</b>，σ 才收敛。</p></div>
     <div class="card"><h3>⚖️ 中性灰背景</h3><p>整卡背景是中性灰（输出约 110~130 / 8bit sRGB）。自动曝光和自动白平衡不会在卡上「跑偏」，不同相机、不同批次拍的读数才可比。</p></div>
+  </div>
+  <div class="card">
+    <h3>➕ 20-patch circular OECF：eSFR ISO 中心的那一圈</h3>
+    <div class="grid2">
+      <div style="text-align:center">
+        <svg viewBox="0 0 340 340" width="100%" style="max-width:340px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="20-patch circular OECF 布局示意">
+<circle cx="170" cy="170" r="126" fill="none" stroke="#c8d2dc" stroke-dasharray="3 3" stroke-width="1"/>
+<rect x="70" y="152" width="46" height="36" fill="#858585" stroke="#8a97a5" stroke-width="1"/>
+<text x="111" y="174" font-size="9" text-anchor="middle" fill="#fff" font-family="sans-serif">背景</text>
+<text x="111" y="200" font-size="8" text-anchor="middle" fill="#64748b" font-family="sans-serif">d=0.62</text>
+<rect x="171.7" y="27.6" width="36" height="36" fill="#e6e6e6" stroke="#98a3af" stroke-width="0.8"/>
+<text x="189.7" y="48.6" font-size="9" font-weight="600" text-anchor="middle" fill="#1f2937" font-family="sans-serif">1</text>
+<text x="194.7" y="16.9" font-size="8.5" text-anchor="middle" fill="#64748b" font-family="sans-serif">0.10</text>
+<rect x="209.2" y="39.7" width="36" height="36" fill="#d8d8d8" stroke="#98a3af" stroke-width="0.8"/>
+<text x="227.2" y="60.7" font-size="9" font-weight="600" text-anchor="middle" fill="#1f2937" font-family="sans-serif">2</text>
+<text x="241.7" y="32.2" font-size="8.5" text-anchor="middle" fill="#64748b" font-family="sans-serif">0.16</text>
+<rect x="241.1" y="62.9" width="36" height="36" fill="#cbcbcb" stroke="#98a3af" stroke-width="0.8"/>
+<text x="259.1" y="83.9" font-size="9" font-weight="600" text-anchor="middle" fill="#1f2937" font-family="sans-serif">3</text>
+<text x="281.7" y="61.3" font-size="8.5" text-anchor="middle" fill="#64748b" font-family="sans-serif">0.22</text>
+<rect x="264.3" y="94.8" width="36" height="36" fill="#bebebe" stroke="#98a3af" stroke-width="0.8"/>
+<text x="282.3" y="115.8" font-size="9" font-weight="600" text-anchor="middle" fill="#1f2937" font-family="sans-serif">4</text>
+<text x="310.8" y="101.3" font-size="8.5" text-anchor="middle" fill="#64748b" font-family="sans-serif">0.28</text>
+<rect x="276.4" y="132.3" width="36" height="36" fill="#b1b1b1" stroke="#98a3af" stroke-width="0.8"/>
+<text x="294.4" y="153.3" font-size="9" font-weight="600" text-anchor="middle" fill="#1f2937" font-family="sans-serif">5</text>
+<text x="326.1" y="148.3" font-size="8.5" text-anchor="middle" fill="#64748b" font-family="sans-serif">0.35</text>
+<rect x="276.4" y="171.7" width="36" height="36" fill="#a6a6a6" stroke="#98a3af" stroke-width="0.8"/>
+<text x="294.4" y="192.7" font-size="9" font-weight="600" text-anchor="middle" fill="#1f2937" font-family="sans-serif">6</text>
+<text x="326.1" y="197.7" font-size="8.5" text-anchor="middle" fill="#64748b" font-family="sans-serif">0.41</text>
+<rect x="264.3" y="209.2" width="36" height="36" fill="#999999" stroke="#98a3af" stroke-width="0.8"/>
+<text x="282.3" y="230.2" font-size="9" font-weight="600" text-anchor="middle" fill="#1f2937" font-family="sans-serif">7</text>
+<text x="310.8" y="244.7" font-size="8.5" text-anchor="middle" fill="#64748b" font-family="sans-serif">0.49</text>
+<rect x="241.1" y="241.1" width="36" height="36" fill="#8c8c8c" stroke="#98a3af" stroke-width="0.8"/>
+<text x="259.1" y="262.1" font-size="9" font-weight="600" text-anchor="middle" fill="#ffffff" font-family="sans-serif">8</text>
+<text x="281.7" y="284.7" font-size="8.5" text-anchor="middle" fill="#64748b" font-family="sans-serif">0.57</text>
+<rect x="209.2" y="264.3" width="36" height="36" fill="#818181" stroke="#98a3af" stroke-width="0.8"/>
+<text x="227.2" y="285.3" font-size="9" font-weight="600" text-anchor="middle" fill="#ffffff" font-family="sans-serif">9</text>
+<text x="241.7" y="313.8" font-size="8.5" text-anchor="middle" fill="#64748b" font-family="sans-serif">0.65</text>
+<rect x="171.7" y="276.4" width="36" height="36" fill="#767676" stroke="#98a3af" stroke-width="0.8"/>
+<text x="189.7" y="297.4" font-size="9" font-weight="600" text-anchor="middle" fill="#ffffff" font-family="sans-serif">10</text>
+<text x="194.7" y="329.1" font-size="8.5" text-anchor="middle" fill="#64748b" font-family="sans-serif">0.74</text>
+<rect x="132.3" y="276.4" width="36" height="36" fill="#6b6b6b" stroke="#98a3af" stroke-width="0.8"/>
+<text x="150.3" y="297.4" font-size="9" font-weight="600" text-anchor="middle" fill="#ffffff" font-family="sans-serif">11</text>
+<text x="145.3" y="329.1" font-size="8.5" text-anchor="middle" fill="#64748b" font-family="sans-serif">0.83</text>
+<rect x="94.8" y="264.3" width="36" height="36" fill="#606060" stroke="#98a3af" stroke-width="0.8"/>
+<text x="112.8" y="285.3" font-size="9" font-weight="600" text-anchor="middle" fill="#ffffff" font-family="sans-serif">12</text>
+<text x="98.3" y="313.8" font-size="8.5" text-anchor="middle" fill="#64748b" font-family="sans-serif">0.93</text>
+<rect x="62.9" y="241.1" width="36" height="36" fill="#565656" stroke="#98a3af" stroke-width="0.8"/>
+<text x="80.9" y="262.1" font-size="9" font-weight="600" text-anchor="middle" fill="#ffffff" font-family="sans-serif">13</text>
+<text x="58.3" y="284.7" font-size="8.5" text-anchor="middle" fill="#64748b" font-family="sans-serif">1.04</text>
+<rect x="39.7" y="209.2" width="36" height="36" fill="#4c4c4c" stroke="#98a3af" stroke-width="0.8"/>
+<text x="57.7" y="230.2" font-size="9" font-weight="600" text-anchor="middle" fill="#ffffff" font-family="sans-serif">14</text>
+<text x="29.2" y="244.7" font-size="8.5" text-anchor="middle" fill="#64748b" font-family="sans-serif">1.16</text>
+<rect x="27.6" y="171.7" width="36" height="36" fill="#414141" stroke="#98a3af" stroke-width="0.8"/>
+<text x="45.6" y="192.7" font-size="9" font-weight="600" text-anchor="middle" fill="#ffffff" font-family="sans-serif">15</text>
+<text x="13.9" y="197.7" font-size="8.5" text-anchor="middle" fill="#64748b" font-family="sans-serif">1.30</text>
+<rect x="27.6" y="132.3" width="36" height="36" fill="#383838" stroke="#98a3af" stroke-width="0.8"/>
+<text x="45.6" y="153.3" font-size="9" font-weight="600" text-anchor="middle" fill="#ffffff" font-family="sans-serif">16</text>
+<text x="13.9" y="148.3" font-size="8.5" text-anchor="middle" fill="#64748b" font-family="sans-serif">1.44</text>
+<rect x="39.7" y="94.8" width="36" height="36" fill="#2f2f2f" stroke="#98a3af" stroke-width="0.8"/>
+<text x="57.7" y="115.8" font-size="9" font-weight="600" text-anchor="middle" fill="#1f2937" font-family="sans-serif">17</text>
+<text x="29.2" y="101.3" font-size="8.5" text-anchor="middle" fill="#64748b" font-family="sans-serif">1.61</text>
+<rect x="62.9" y="62.9" width="36" height="36" fill="#272727" stroke="#98a3af" stroke-width="0.8"/>
+<text x="80.9" y="83.9" font-size="9" font-weight="600" text-anchor="middle" fill="#ffffff" font-family="sans-serif">18</text>
+<text x="58.3" y="61.3" font-size="8.5" text-anchor="middle" fill="#64748b" font-family="sans-serif">1.80</text>
+<rect x="94.8" y="39.7" width="36" height="36" fill="#1e1e1e" stroke="#98a3af" stroke-width="0.8"/>
+<text x="112.8" y="60.7" font-size="9" font-weight="600" text-anchor="middle" fill="#ffffff" font-family="sans-serif">19</text>
+<text x="98.3" y="32.2" font-size="8.5" text-anchor="middle" fill="#64748b" font-family="sans-serif">2.03</text>
+<rect x="132.3" y="27.6" width="36" height="36" fill="#171717" stroke="#98a3af" stroke-width="0.8"/>
+<text x="150.3" y="48.6" font-size="9" font-weight="600" text-anchor="middle" fill="#ffffff" font-family="sans-serif">20</text>
+<text x="145.3" y="16.9" font-size="8.5" text-anchor="middle" fill="#64748b" font-family="sans-serif">2.30</text>
+</svg>
+      </div>
+      <div>
+        <p>单圈 20 块。官方编号规则（patch 数是 4 的倍数时）：最亮的 <b>1 号</b>与最暗的 <b>20 号</b>并排放在<b>顶部</b>，1 号在右，顺时针一圈逐渐变暗。左中的灰块是 d=0.62 的背景参考。</p>
+        <p>密度序列（160:1 变体，源自 ISO 14524 Table A3）：0.10、0.16、0.22、0.28、0.35、0.41、0.49、0.57、0.65、0.74、0.83、0.93、1.04、1.16、1.30、1.44、1.61、1.80、2.03、2.30——步进从 0.06 一路加到 0.27，和 15 块卡一样的「视觉均匀」设计。</p>
+        <table class="patch-table">
+          <tr><th></th><th>15-patch noise target<br><span class="tag">本页主角</span></th><th>20-patch circular OECF</th></tr>
+          <tr><td>排布</td><td>12 外圈近椭圆 + 3 中心</td><td>单圈 20 块</td></tr>
+          <tr><td>密度</td><td>0.1 ~ 2.0（80:1）</td><td>0.10 ~ 2.30（160:1）</td></tr>
+          <tr><td>主用途</td><td>大面积均匀块：噪声 / SNR / DR</td><td>OECF 逐块读数（eSFR ISO 全卡分析的一环）</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="callout"><b>Imatest 官方警告：20-patch 不适合动态范围测量。</b>尤其透射版最暗两块（19、20）之间跳变 2.37 OD ≈ 47.4 dB——DR 曲线在低光端只剩两个点，外推不出可信的 L<sub>min</sub>；36-patch DR 卡就是为此而生。本页 ⑧ 的 DR 用 SNR 曲线整体外推，也是同一逻辑的落地。</div>
   </div>
 </section>
 
@@ -80,7 +173,7 @@
   <input type="range" id="knFill" min="0.4" max="0.98" step="0.02" value="0.65">
   <div class="readout">
     <div class="ro"><div class="k">采样数（12×12 网格）</div><div class="v" id="roFillN">144</div></div>
-    <div class="ro"><div class="k">patch 均值（DN）</div><div class="v" id="roFillMean">—</div></div>
+    <div class="ro"><div class="k">patch 线性均值（×255）</div><div class="v" id="roFillMean">—</div></div>
     <div class="ro"><div class="k">patch σ（线性域）</div><div class="v" id="roFillSd">—</div></div>
     <div class="ro"><div class="k">SNR</div><div class="v" id="roFillSnr">—</div></div>
   </div>
@@ -90,7 +183,19 @@
 
 <!-- ============ ④ ============ -->
 <section id="s4">
-  <h2>④ OECF：相机的「亮度 → 数字」指纹</h2>
+  <h2>④ 灰阶：每一块的数字怎么算、怎么画</h2>
+  <p>上一节的绿框告诉你「在哪读」，这一节回答「读出来的数字从哪来」。从设计图纸到屏幕上的灰度，整条链只有三步：</p>
+  <div class="formula" data-tex="R=10^{-d},\qquad S=R\cdot E\cdot V(x,y),\qquad {\rm DN}=255\cdot S^{1/\gamma}"><span class="fallback-sub">R</span> = 10<sup class="fallback-sup">−d</sup>，S = R·E·V(x,y)，DN = 255 · S<sup class="fallback-sup">1/γ</sup></div>
+  <p><b>R 反射率</b>由设计密度 d 决定（印刷厂保证）；<b>E·V</b> 是这块真正收到的曝光——E 全卡一致，V(x,y) 是渐晕、从中心向外变暗；<b>DN</b> 是 gamma 编码后的输出。理论 DN 用无噪声模型逐步算出；实测 DN 是当前帧 12×12 ROI 均值经 gamma 反推回 DN 域的值。下面表格把两列并排放，Δ 一眼看出差多少。</p>
+  <table class="patch-table" id="toneTable"></table>
+  <canvas id="swatchCv" class="chart" width="720" height="195"></canvas>
+  <p class="note">上排色条 = 理论灰阶（块内数字是 DN），下排 = 当前帧实测，每列底部 Δ 是两者之差；最右虚线框是背景参考块（d=0.62），不是测量对象。拖任意旋钮，表格和色条会整体重算：曝光拉满看亮端 Δ 怎么爆表、γ 调到 1.0 看整条灰阶怎么「提亮」。</p>
+  <div class="callout"><b>为什么块的间隔不是均匀的？</b>看表格「密度 d」列：步进从 0.09 一路加到 0.34（20 块官方卡同理 0.06→0.27）。人眼对亮度的感知近似对数（韦伯定律）——密度域均匀步进的卡会「看上去前亮后暗挤成一团」；反着设计、让步进递增，整条灰阶在视觉上才均匀变暗。再看 V 列：外圈块 V≈0.87~0.91、中心块 V≈1.00——同一密度的块放错位置，DN 能差出一个多档曝光，这正是 ① 章圆环排布的理由。</div>
+</section>
+
+<!-- ============ ⑤ ============ -->
+<section id="s5">
+  <h2>⑤ OECF：相机的「亮度 → 数字」指纹</h2>
   <p>把每个 patch 的已知亮度（x 轴，log₁₀ L）和实测 DN（y 轴）画出来，就是 <b>OECF（光电转换函数）</b>——ISO 14524 的主角，相机的色调指纹。理想 gamma 相机的理论曲线：</p>
   <div class="formula" data-tex="{\rm DN}(L)=255\cdot(L\cdot E)^{1/\gamma}"><span class="fallback-sub">DN</span>(L) = 255 · (L·E)<sup class="fallback-sup">1/γ</sup></div>
   <canvas id="oecfCv" class="chart" width="720" height="320"></canvas>
@@ -99,12 +204,27 @@
     <div class="ro"><div class="k">实测拟合 γ（log-log 回归）</div><div class="v" id="roFitGamma">—</div></div>
     <div class="ro"><div class="k">饱和 patch 数</div><div class="v" id="roClip">—</div></div>
   </div>
-  <div class="callout"><b>线性化</b>：ISO 15739 的噪声全部在「输入参考域」计算——先把 DN 经逆 OECF 变回线性亮度（linearized from camera output），再求均值和 rms。下面 ⑤⑥⑧ 三节都严格走这一步。</div>
+  <div class="card">
+    <h3>🧭 四区段读图指南（对照上面曲线的背景色带）</h3>
+    <table class="patch-table">
+      <tr><th>区段</th><th>曲线上发生了什么</th><th>测量上的意义</th></tr>
+      <tr><td>① 底噪区（toe）</td><td>光太弱，信号淹没在读出噪声与暗电流里，SNR 跌破 1</td><td>动态范围下限 L<sub>min</sub> 在这附近，低于它的亮度测无可测</td></tr>
+      <tr><td>② 线性工作区</td><td>光量 ×N → DN 近似 ×N；log-log 图上是一段直线，斜率 = 1/γ</td><td>ISO 感光度定义处；去噪、HDR 合成、色度标定都必须在此区做</td></tr>
+      <tr><td>③ 肩部（shoulder）</td><td>满阱渐满，斜率缓慢塌陷，高光被柔和压缩</td><td>过曝前的缓冲垫；高光过渡自然与否就看它</td></tr>
+      <tr><td>④ 饱和区</td><td>DN 钉死在 255，过曝切平</td><td>L<sub>sat</sub> 的锚点；再亮也不多出一个数字</td></tr>
+    </table>
+    <p class="note">本页模拟相机是<b>纯 gamma + 硬截断</b>——只有 ①②④ 三个区，没有柔和肩部：曲线从线性段直接跳到 255。真实传感器的满阱是渐进充满的，③ 区真实存在且很有用（肩部越平缓，高光过渡越自然）。</p>
+  </div>
+  <div class="grid2">
+    <div class="card"><h3>📍 四个关键位置</h3><p>①②交界 = 低光极限（L<sub>min</sub>，SNR=1）；② 的斜率 = 感光度与 gamma；③④交界 = 满阱容量；<b>γ=1 点线</b>是完美线性传感器的参照——实测曲线离它多远，就是相机「调味」的程度。</p></div>
+    <div class="card"><h3>📖 实测点怎么读</h3><p>误差条是 patch 内 σ 换算到 DN 域的散布；默认参数下实测与理论的 Δ 全卡 &lt; 1 DN。拖曝光旋钮：看 ④ 饱和区怎么从亮端「吃掉」patch、L<sub>min</sub> 线怎么左移进底噪带——这两个边界正是 ⑧ 动态范围的原料。</p></div>
+  </div>
+  <div class="callout"><b>线性化</b>：ISO 15739 的噪声全部在「输入参考域」计算——先把 DN 经逆 OECF 变回线性亮度（linearized from camera output），再求均值和 rms。下面 ⑥⑦⑨ 三节都严格走这一步。</div>
 </section>
 
-<!-- ============ ⑤ ============ -->
-<section id="s5">
-  <h2>⑤ SNR 曲线与那个「0.13」</h2>
+<!-- ============ ⑥ ============ -->
+<section id="s6">
+  <h2>⑥ SNR 曲线与那个「0.13」</h2>
   <p>每个 patch：信号 = 线性域均值，噪声 = 去低频后的 rms，SNR = 信号/噪声。15 个点连成 SNR–亮度曲线。但报告里只需要<b>一个数</b>——在哪报？ISO 15739 的三步法：</p>
   <div class="grid3">
     <div class="card"><h3>1️⃣ 提取 L<sub>ref</sub></h3><p>使三通道任一达到 <b>DN=245</b> 的最低场景亮度（245 是 8bit sRGB 的白裁剪参考）。</p></div>
@@ -123,9 +243,9 @@
   </div>
 </section>
 
-<!-- ============ ⑥ ============ -->
-<section id="s6">
-  <h2>⑥ 多帧分离：时间噪声 vs 固定模式噪声</h2>
+<!-- ============ ⑦ ============ -->
+<section id="s7">
+  <h2>⑦ 多帧分离：时间噪声 vs 固定模式噪声</h2>
   <div class="grid2">
     <div class="card"><h3>⏱️ 时间噪声（Temporal）</h3><p>每帧都不同：散粒噪声、读出噪声。同一 patch 的<b>帧间均值波动</b>就是它。多帧平均的 √N 收益只对它有效。</p></div>
     <div class="card"><h3>🧱 空间噪声（Spatial / FPN）</h3><p>每帧都一样：像素间的固定增益差（PRNU）。拍 N 帧再平均，平均图里 patch 内<b>仍在的</b>波动就是它——平均不掉，只能标定。</p></div>
@@ -146,9 +266,9 @@
   <p class="note">有 PRNU 时实测增益 <b>低于</b> √N——因为固定模式噪声平均不掉，地板卡在那里。这解释了为什么长曝光的天文摄影还要拍暗场、平场：那些是标定 FPN 的专用卡「帧」。</p>
 </section>
 
-<!-- ============ ⑦ ============ -->
-<section id="s7">
-  <h2>⑦ 动态范围：曲线的两个尽头</h2>
+<!-- ============ ⑧ ============ -->
+<section id="s8">
+  <h2>⑧ 动态范围：曲线的两个尽头</h2>
   <p><span class="formula" data-tex="DR=L_{\rm sat}/L_{\rm min}"><span class="fallback-sub">DR</span> = L<sub class="fallback-sub">sat</sub> / L<sub class="fallback-sub">min</sub></span>：上端是还能测的极限（DN 顶格对应的场景亮度），下端是 SNR 跌到 <b>1（0dB）</b>的亮度。低光端噪声恒定（读出噪声地板），SNR ∝ L 成直线——ISO 15739 允许把这根直线外推到 0dB 找 L<sub>min</sub>（标准记法 L<sub>min</sub> = σ(d=2)/g(d=2)）。</p>
   <canvas id="drCv" class="chart" width="720" height="320"></canvas>
   <div class="readout">
@@ -165,14 +285,14 @@
       <tr><td>透射 TE241 / 1000:1（d≤3.1）</td><td>3.1</td><td>≈ 10.3 档</td><td>更高 DR 的传感器</td></tr>
       <tr><td>36-patch 透射 DR 卡（d≤6）</td><td>6.0</td><td>≈ 40 档（120dB）</td><td>HDR / 车载 / 安防，需灯箱 + 参考文件</td></tr>
     </table>
-    <p class="note">本页模拟相机（σ<sub>r</sub>=0.003、c=0.002）约 47dB / 7.9 档——反射卡刚好够到最暗 patch。把读出噪声滑块调大试试：L<sub>min</sub> 上移，反射卡就「测不到底」了。</p>
+    <p class="note">本页模拟相机（σ<sub>r</sub>=0.003、c=0.002）约 47dB / 7.9 档——反射卡刚好够到最暗 patch。把读出噪声滑块调大试试：L<sub>min</sub> 上移，反射卡就「测不到底」了。这也是 ① 章那张「20-patch 不适合测 DR」警告背后的定量原因：低光端点太少，直线外推就没有支点。</p>
   </div>
 </section>
 
-<!-- ============ ⑧ ============ -->
-<section id="s8">
-  <h2>⑧ py2js 实操：整条测量流水线都是你的</h2>
-  <p>前八节你在<b>看</b>测量，这一节你来<b>跑</b>它：下面是真实的 Python 代码——从 patch 的 DN 样本出发，线性化、（可选）去低频、算每块均值/σ/SNR、提取 L<sub>ref</sub>、按 0.13 定报告点、log-log 插值、外推动态范围——一条龙。由本站自研的 py2js 转译器在你的浏览器里<b>现场编译执行</b>，没有后端。改公式（K13、LF、γ……）立刻看到报告值怎么变。</p>
+<!-- ============ ⑨ ============ -->
+<section id="s9">
+  <h2>⑨ py2js 实操：整条测量流水线都是你的</h2>
+  <p>前面几节你在<b>看</b>测量，这一节你来<b>跑</b>它：下面是真实的 Python 代码——从 patch 的 DN 样本出发，线性化、（可选）去低频、算每块均值/σ/SNR、提取 L<sub>ref</sub>、按 0.13 定报告点、log-log 插值、外推动态范围——一条龙。由本站自研的 py2js 转译器在你的浏览器里<b>现场编译执行</b>，没有后端。改公式（K13、LF、γ……）立刻看到报告值怎么变。</p>
   <div class="btns">
     <button class="act on" id="btnPgRun">▶ 运行（py2js 浏览器内编译）</button>
     <button class="act" id="btnPgReset">↺ 还原代码</button>
@@ -193,10 +313,11 @@
   <h2>参考与来源</h2>
   <ul class="refs">
     <li>Imatest — <i>Grayscale charts for Color/Tone and Stepchart</i>（patch 家族、fill factor 建议、patch order）<a href="https://www.imatest.com/docs/stepchart_ai_iso/" target="_blank" rel="noopener">imatest.com/docs/stepchart_ai_iso</a></li>
+    <li>Imatest — <i>eSFR ISO Instructions</i>（20-patch OECF 名义密度序列，源自 ISO 14524 Table A.3 的 160:1 变体）<a href="https://www.imatest.com/docs/esfriso_instructions/" target="_blank" rel="noopener">imatest.com/docs/esfriso_instructions</a></li>
     <li>Imatest — <i>Color/Tone & eSFR ISO Noise</i>（ISO 15739 SNR、visual noise 实现）</li>
     <li>ISO 15739:2023 <i>Photography — Electronic still-picture imaging — Noise measurements</i>（第 4 版，ISO/TC 42）<a href="https://www.iso.org/obp/ui/#iso:std:iso:15739:en" target="_blank" rel="noopener">iso.org/obp</a></li>
     <li>Image Engineering — <i>图像噪声：类型、成因与测量</i>（L<sub>ref</sub>/L<sub>SNR</sub> 方法、0.13 由来、TE269/TE270X）<a href="https://www.image-engineering.de/zh/noise" target="_blank" rel="noopener">image-engineering.de/zh/noise</a></li>
-    <li>ISO 14524 <i>OECF 测量方法</i>（12-patch 圆形 OECF 几何与密度表）</li>
+    <li>ISO 14524 <i>OECF 测量方法</i>（圆形 OECF 几何与密度表）</li>
   </ul>
   <p class="note">本页的相机模型为教学简化：纯 gamma 编码（非 sRGB 分段）、噪声参数取教学量级、patch 几何按 ISO 15739 noise target 的官方描述示意。所有计算均在本页独立完成，不依赖其他演示页。</p>
 </section>

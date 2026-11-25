@@ -107,6 +107,20 @@
   }
   S.pxModel = pxModel;
 
+  /* ---------- 灰阶理论账目（④ 章）：逐块 d→R→S=R·E·V→理论 DN ---------- */
+  S.patchTheory = function () {
+    return PATCHES.map(function (p) {
+      var V = vign(p.cx - CX, p.cy - CY);
+      var s0 = Math.min(Math.max(p.R * S.st.EXPO * V, 0), 1);
+      return { d: p.d, R: p.R, V: V, S: s0, dn: 255 * Math.pow(s0, 1 / S.st.GAMMA) };
+    });
+  };
+  // 背景（d=0.62）理论 DN：位于卡中心，V=1
+  S.bgTheory = function () {
+    var s0 = Math.min(Math.max(S.BG_R * S.st.EXPO, 0), 1);
+    return 255 * Math.pow(s0, 1 / S.st.GAMMA);
+  };
+
   /* ---------- 渲染一帧 ---------- */
   S.shotImg = null; S.shotData = null;
   S.shoot = function (frame) {
