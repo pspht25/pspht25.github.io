@@ -290,7 +290,7 @@
   function ensurePy(cb) {
     if (window.PY2JS) { pyReady = true; cb(window.PY2JS); return; }
     var s = document.createElement('script');
-    s.src = '../../assets/py2js.bundle.js';       // 在线：站点共享缓存
+    s.src = '../../../assets/py2js.bundle.js';    // 在线：站点共享缓存（页面在 /demos/files/<dir>/ 下，上三级到根）
     s.onload = function () {
       if (window.PY2JS) { pyReady = true; cb(window.PY2JS); } else loadLocal();
     };
