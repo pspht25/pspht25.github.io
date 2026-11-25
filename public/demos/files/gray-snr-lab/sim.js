@@ -119,6 +119,11 @@
       }
     }
     S.shotData = d; S.shotImg = img;
+    // 离屏 canvas：drawImage 只接受 canvas/image/bitmap，不接受 ImageData（真实浏览器会抛 TypeError）
+    if (!S._shotCv) S._shotCv = document.createElement('canvas');
+    if (S._shotCv.width !== W || S._shotCv.height !== H) { S._shotCv.width = W; S._shotCv.height = H; }
+    S._shotCv.getContext('2d').putImageData(img, 0, 0);
+    S.shotCanvas = S._shotCv;
     return img;
   };
 

@@ -134,7 +134,7 @@
     var P = palette();
     // 左：整卡缩略（170×128）
     var mw = 340, mh = 255, mx = 8, my = 22;
-    if (S.shotImg) ctx.drawImage(S.shotImg, 0, 0, S.W, S.H, mx, my, mw, mh);
+    if (S.shotCanvas) ctx.drawImage(S.shotCanvas, 0, 0, S.W, S.H, mx, my, mw, mh);
     ctx.strokeStyle = P.BRD; ctx.strokeRect(mx, my, mw, mh);
     var sc = mw / S.W;
     // 全 patch 中心点
@@ -154,9 +154,9 @@
     var zoom = 5, zw2 = Math.min(zw, 350);
     var cx0 = Math.round(p.cx), cy0 = Math.round(p.cy);
     var half = 32;
-    if (S.shotImg) {
+    if (S.shotCanvas) {
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(S.shotImg, cx0 - half, cy0 - half, half * 2, half * 2, zx, zy, zw2, zh);
+      ctx.drawImage(S.shotCanvas, cx0 - half, cy0 - half, half * 2, half * 2, zx, zy, zw2, zh);
       ctx.imageSmoothingEnabled = true;
     }
     ctx.strokeStyle = P.BRD; ctx.strokeRect(zx, zy, zw2, zh);
