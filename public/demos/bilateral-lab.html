@@ -163,6 +163,15 @@ footer{text-align:center;color:var(--muted);font-size:.85rem;padding:30px 0 10px
     <div class="card"><h3>🧭 空间核 G<sub>σs</sub>（管"谁来参与"）</h3><p>只看<b>几何距离</b> ‖p−q‖。作用相当于高斯滤波的窗口：σ<sub>s</sub> 越大，参与平均的邻居范围越大。它在整张图上<b>固定不变</b>——和高斯滤波完全一样。</p></div>
     <div class="card"><h3>🎚️ 值域核 G<sub>σr</sub>（管"敢不敢用它"）</h3><p>只看<b>亮度差</b> |I<sub>p</sub>−I<sub>q</sub>|。和中心几乎一样亮的邻居 → 权重≈1，照常平均；亮度差很大的邻居（比如边缘对面的）→ 权重≈0，等于不存在。<b>它在每个像素上都重新算</b>——这是双边滤波"看图说话"的灵魂，也是它非线性、慢的原因。</p></div>
   </div>
+  <div class="card" style="margin-top:14px">
+    <h3 style="margin-top:0">📈 值域核长这样：一眼看清谁被开除</h3>
+    <p style="font-size:.9rem">横轴是邻居与中心的<b>亮度差 Δ</b>，纵轴是值域核给这个邻居的<b>权重</b>。在图上拖动鼠标读数：压到红色<b>开除线</b>（w=0.01）以下的亮度差，邻居就被开除、不参与平均。<b>σ<sub>r</sub> 越大曲线越胖</b>——容忍的亮度差范围越宽。</p>
+    <canvas id="rkCv" width="720" height="300" style="width:100%;max-width:720px;border:1px solid var(--border);border-radius:10px;cursor:crosshair;touch-action:none;display:block"></canvas>
+    <div class="sliders" style="margin-top:10px">
+      <label>σ<sub>r</sub> 值域容忍 <b id="lbRk">25</b><input type="range" id="rngRk" min="3" max="120" step="1" value="25"></label>
+    </div>
+    <p class="note" style="font-size:.85rem">读图：底部色带——<b>绿色段</b> = 参与平均的亮度差（w≥0.01），<b>红色段</b> = 被开除（w&lt;0.01）；分界点 <b>Δ* ≈ 3.03·σ<sub>r</sub></b>（权重从 1 跌到 0.01 的位置）。灰色虚线是 σ<sub>r</sub>=10/30/60/120 的参照曲线。把 σ<sub>r</sub> 拉到 120 试试：Δ* 超过 255，整个取值范围全程放行——这就是第⑦节说"σ<sub>r</sub> 过大开始卡通化、退化回高斯"的直观原因。想看这些权重落到具体邻居身上，去 ③ 的放大镜。</p>
+  </div>
   <div class="callout"><b>一句话记住：</b>空间核决定"窗有多大"，值域核决定"窗里谁被开除"。平坦区里大家亮度都差不多，值域核全部放行 → 和高斯一样平滑；边缘上对面阵营全部被开除 → 只跟自己阵营平均，边缘自然不糊。</div>
 </section>
 
@@ -959,6 +968,100 @@ for row in result.tolist():
     });
   });
   $('pgCode').addEventListener('input', function(){ pgSyncKnobs(); });
+  /* ---------- ② 值域核函数图像 ---------- */
+  (function(){
+    var cv=$('rkCv'); if(!cv) return;
+    var ctx=cv.getContext('2d');
+    var CW=cv.width, CH=cv.height, PL=52, PT=20, PR=14, PB=34;
+    var SIGREF=[10,30,60,120];
+    var cs=getComputedStyle(document.documentElement);
+    function cssv(n){var v=(cs.getPropertyValue(n)||'').trim();return v||null}
+    var C_ACC=cssv('--accent')||'#2563eb', C_MUT=cssv('--muted')||'#64748b', C_FG=cssv('--fg')||'#1f2937', C_AMB=cssv('--amber')||'#d97706', C_CARD=cssv('--card')||'#ffffff', C_BRD=cssv('--border')||'#e3e9f0';
+    var sr=25, dh=-1;
+    function xr(d){return PL+(d/255)*(CW-PL-PR)}
+    function yr(w){return PT+(1-w)*(CH-PT-PB)}
+    function wOf(d,s){return Math.exp(-d*d/(2*s*s))}
+    function dStar(s){return s*Math.sqrt(2*Math.log(100))}
+    function draw(){
+      ctx.clearRect(0,0,CW,CH);
+      ctx.fillStyle=C_CARD; ctx.fillRect(0,0,CW,CH);
+      var ds=dStar(sr);
+      /* 底部保留/开除色带 */
+      var bandY=CH-PB+4, bandH=6;
+      ctx.fillStyle='rgba(22,163,74,.35)'; ctx.fillRect(xr(0),bandY,xr(Math.min(ds,255))-xr(0),bandH);
+      if(ds<255){ctx.fillStyle='rgba(220,38,38,.35)'; ctx.fillRect(xr(ds),bandY,xr(255)-xr(ds),bandH);}
+      /* 网格与刻度 */
+      ctx.strokeStyle=C_BRD; ctx.lineWidth=1;
+      [0.25,0.5,0.75].forEach(function(w){var y=yr(w);ctx.beginPath();ctx.moveTo(PL,y);ctx.lineTo(CW-PR,y);ctx.stroke();});
+      ctx.fillStyle=C_MUT; ctx.font='11px system-ui,sans-serif'; ctx.textAlign='right';
+      [[0,'0'],[0.5,'0.5'],[1,'1']].forEach(function(t){ctx.fillText(t[1],PL-6,yr(t[0])+4);});
+      ctx.textAlign='center';
+      for(var d=0;d<=250;d+=50){ctx.fillText(String(d),xr(d),CH-PB+16);}
+      /* 开除线 w=0.01 */
+      ctx.strokeStyle='rgba(220,38,38,.75)'; ctx.setLineDash([4,4]);
+      ctx.beginPath();ctx.moveTo(PL,yr(0.01));ctx.lineTo(CW-PR,yr(0.01));ctx.stroke();ctx.setLineDash([]);
+      ctx.fillStyle='rgba(220,38,38,.9)'; ctx.textAlign='right';
+      ctx.fillText('开除线 w=0.01',CW-PR-6,yr(0.01)-5);
+      /* Δ* 竖虚线 */
+      if(ds<=255){
+        ctx.strokeStyle=C_AMB; ctx.setLineDash([5,4]);
+        ctx.beginPath();ctx.moveTo(xr(ds),PT);ctx.lineTo(xr(ds),CH-PB);ctx.stroke();ctx.setLineDash([]);
+        ctx.fillStyle=C_AMB; ctx.textAlign='left';
+        ctx.fillText('Δ*≈'+Math.round(ds),xr(ds)+6,PT+10);
+      } else {
+        ctx.fillStyle=C_AMB; ctx.textAlign='right';
+        ctx.fillText('全程保留（Δ*≈'+Math.round(ds)+' 超出量程）',CW-PR-6,PT+10);
+      }
+      /* 参考曲线（灰虚线） */
+      ctx.save(); ctx.globalAlpha=.5; ctx.strokeStyle=C_MUT; ctx.setLineDash([5,4]);
+      SIGREF.forEach(function(s){
+        ctx.beginPath();
+        for(var d=0;d<=255;d+=2){var x=xr(d),y=yr(wOf(d,s));if(d===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}
+        ctx.stroke();
+      });
+      ctx.restore(); ctx.setLineDash([]);
+      /* 当前 σr 曲线 */
+      ctx.strokeStyle=C_ACC; ctx.lineWidth=2.5; ctx.beginPath();
+      for(var d=0;d<=255;d+=1){var x=xr(d),y=yr(wOf(d,sr));if(d===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}
+      ctx.stroke(); ctx.lineWidth=1;
+      /* 轴 */
+      ctx.strokeStyle=C_MUT;
+      ctx.beginPath();ctx.moveTo(PL,PT);ctx.lineTo(PL,CH-PB);ctx.lineTo(CW-PR,CH-PB);ctx.stroke();
+      ctx.fillStyle=C_MUT; ctx.textAlign='left'; ctx.fillText('权重 w',4,PT+4);
+      ctx.textAlign='right'; ctx.fillText('亮度差 Δ',CW-PR,CH-2);
+      /* 拖动读数 */
+      if(dh>=0){
+        var ddd=clamp(dh,0,255), xx=xr(ddd);
+        ctx.strokeStyle='rgba(37,99,235,.35)';
+        ctx.beginPath();ctx.moveTo(xx,PT);ctx.lineTo(xx,CH-PB);ctx.stroke();
+        ctx.fillStyle=C_ACC;
+        ctx.beginPath();ctx.arc(xx,yr(wOf(ddd,sr)),4,0,6.2832);ctx.fill();
+        var w=wOf(ddd,sr), keep=w>=0.01;
+        var t1='Δ='+Math.round(ddd)+'   w='+w.toFixed(3);
+        var t2=keep?'保留（≥0.01）':'开除（<0.01）';
+        ctx.font='12px system-ui,sans-serif';
+        var bw=Math.max(ctx.measureText(t1).width,ctx.measureText(t2).width)+18;
+        var bx=Math.min(Math.max(xx-bw/2,PL+2),CW-PR-bw-2), by=PT+16;
+        ctx.fillStyle=C_CARD; ctx.strokeStyle=C_BRD;
+        ctx.beginPath();ctx.rect(bx,by,bw,40);ctx.fill();ctx.stroke();
+        ctx.fillStyle=C_FG; ctx.textAlign='left'; ctx.fillText(t1,bx+9,by+16);
+        ctx.fillStyle=keep?'#16a34a':'#dc2626'; ctx.fillText(t2,bx+9,by+32);
+      }
+    }
+    function toD(e){
+      var r=cv.getBoundingClientRect();
+      return (e.clientX-r.left)*(CW/r.width)-PL;
+    }
+    cv.addEventListener('pointermove',function(e){dh=toD(e)*255/(CW-PL-PR);draw();});
+    cv.addEventListener('pointerdown',function(e){dh=toD(e)*255/(CW-PL-PR);draw();});
+    cv.addEventListener('pointerleave',function(){dh=-1;draw();});
+    $('rngRk').addEventListener('input',function(){
+      sr=parseFloat(this.value);
+      $('lbRk').textContent=this.value;
+      draw();
+    });
+    draw();
+  })();
   pgSetSample('step');
 })();
 </script>
