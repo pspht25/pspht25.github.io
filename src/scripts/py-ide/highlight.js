@@ -1,5 +1,5 @@
 // py-ide · 轻量 Python 语法高亮（零依赖，逐行 tokenizer）
-// 与 python-runner 页同款实现，抽出为共享模块
+// 与 IDE 页共享的逐行 tokenizer
 export function escHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

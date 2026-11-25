@@ -6,8 +6,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   <h1>🔁 Python → JS 转译器</h1>
 
   <div class="intro">
-    <p>输入 <b>Python 风格代码</b>，右侧实时得到等价的 <b>原生 JavaScript</b>。转译在浏览器内<b>静态完成、毫秒级</b>，产物由 V8 直接执行——对比 Pyodide（WASM 解释执行）通常快一个数量级。</p>
-    <p class="muted">与「Python 解释器」互补：解释器跑的是真 CPython（含 numpy 等科学栈）；本页不运行 Python，而是把 Python 语法<b>编译</b>成 JS——适合简单算法与脚本逻辑，产物还能直接复制到任何 JS 项目里用。</p>
+    <p>输入 <b>Python 风格代码</b>，右侧实时得到等价的 <b>原生 JavaScript</b>。转译在浏览器内<b>静态完成、毫秒级</b>，产物由 V8 直接执行——对比 WASM 解释执行的 Python 方案通常快一个数量级。</p>
+    <p class="muted">本页不运行 Python，而是把 Python 语法<b>编译</b>成 JS——适合简单算法与脚本逻辑，产物还能直接复制到任何 JS 项目里用。</p>
   </div>
 
   <div class="panes">
@@ -92,7 +92,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   }
   .pane-head .muted { color: var(--fg-muted); font-weight: 400; font-size: 0.78rem; }
 
-  /* 高亮编辑器：透明 textarea 叠在高亮 pre 上（与解释器页同款） */
+  /* 高亮编辑器：透明 textarea 叠在高亮 pre 上（与 IDE 页同款） */
   .hl-wrap {
     position: relative;
     border: 1px solid var(--border);
@@ -244,7 +244,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
   const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-  // ---------- Python 高亮（与解释器页同款逐行 tokenizer） ----------
+  // ---------- Python 高亮（逐行 tokenizer） ----------
   const KW = new Set('def return if elif else for while import from as with try except finally class in not and or lambda None True False await async yield global nonlocal assert break continue pass raise del is match case'.split(' '));
   const BUILTIN = new Set('print len range int float str list dict set tuple sum min max abs round sorted enumerate zip map filter type isinstance bool bytes repr format any all hex oct bin divmod pow iter next reversed'.split(' '));
 
@@ -547,7 +547,7 @@ print(np.linalg.inv(m))
 print("cumsum:", np.cumsum(np.array([1, 2, 3, 4])))
 print("unique:", np.unique(np.array([3, 1, 2, 3, 1])))`,
     bench: `# 性能感受：转译产物由 V8 原生执行
-# 对比 Pyodide（WASM 解释）通常快 10 倍以上
+# 对比 WASM 解释执行通常快 10 倍以上
 import_time_hint = "见输出面板的运行耗时"
 
 def fib(n):

@@ -17,20 +17,6 @@ export const tools: ToolCard[] = [
     ready: true,
   },
   {
-    title: 'Python 解释器',
-    description: '浏览器里的真 CPython（Pyodide），由博客自托管引擎，支持 numpy / scipy / pandas / matplotlib / sympy，代码全部在本地运行',
-    path: '/tools/python-runner/',
-    emoji: '🐍',
-    ready: true,
-  },
-  {
-    title: 'Python 笔记本',
-    description: '类 Jupyter 的科学计算笔记本：单元格制、变量跨格共享、Out[n] 显示表达式结果、matplotlib 内联，支持顶层 await',
-    path: '/tools/python-notebook/',
-    emoji: '🧪',
-    ready: true,
-  },
-  {
     title: 'Python → JS 转译器',
     description: '把 Python 风格代码实时转译为原生 JavaScript：毫秒级静态转译，产物由 V8 直接执行，可复制到任何 JS 项目',
     path: '/tools/py2js/',
