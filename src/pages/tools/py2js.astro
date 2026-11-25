@@ -34,6 +34,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     <button class="btn ghost demo" data-demo="basic">基础</button>
     <button class="btn ghost demo" data-demo="comp">推导式与排序</button>
     <button class="btn ghost demo" data-demo="string">字符串处理</button>
+    <button class="btn ghost demo" data-demo="oop">类与异常</button>
     <button class="btn ghost demo" data-demo="bench">性能对比</button>
     <span class="sep"></span>
     <button class="btn ghost" id="btnClear">清空输出</button>
@@ -45,8 +46,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   </div>
 
   <div class="intro notes">
-    <p class="muted"><b>支持范围</b>：变量 / 算术运算（含 Python 语义的整除与取模）/ 比较链 / 逻辑短路 / if-elif-else / while / for-in（range 自动生成计数循环）/ 函数与递归 / lambda / f-string / 切片与负索引 / 列表·字典·集合·元组 / 推导式 / 常用内建与方法。第三方库与类（class）暂不支持——遇到不支持语法会给出明确报错。</p>
-    <p class="muted"><b>已知语义差异</b>：真除法结果为整数值时不显示 <code>.0</code>（如 <code>print(170 / 2)</code> 输出 <code>85</code>）；个别二进制浮点边界值上 <code>round</code> 与 CPython 可能相差 ±ulp。</p>
+    <p class="muted"><b>支持范围</b>：变量 / 算术运算（含 Python 语义的整除与取模）/ 比较链 / 逻辑短路 / if-elif-else / while / for-in（range 自动生成计数循环）/ 函数与递归（默认参数、*args、关键字实参、**kwargs）/ lambda / f-string（含格式说明符 <code>&#123;x:.2f&#125;</code>）/ 切片与负索引 / 列表·字典·集合·元组 / 推导式 / try-except-else-finally 异常处理 / while-else 与 for-else / 海象运算符 <code>:=</code> / del / global / nonlocal / yield 生成器 / 类（__init__、方法与 self、单继承、super()、__str__、isinstance）/ 常用内建与方法。import 第三方库、async-await、with 暂不支持——遇到不支持语法会给出明确报错。</p>
+    <p class="muted"><b>已知语义差异</b>：真除法结果为整数值时不显示 <code>.0</code>（如 <code>print(170 / 2)</code> 输出 <code>85</code>）；类实例未定义 <code>__str__</code> 时打印 <code>&lt;类名 对象&gt;</code>；个别二进制浮点边界值上 <code>round</code> 与 CPython 可能相差 ±ulp。</p>
   </div>
 </BaseLayout>
 
@@ -470,6 +471,47 @@ path = r"C:\\new\\test"
 print(path)
 print("abc"[::-1], "hello"[1:4], "x" * 5)
 print("HELLO".lower().startswith("he"), "py" in "pypi")`,
+    oop: `# 类、异常、生成器、关键字实参
+class Animal:
+    def __init__(self, name, sound):
+        self.name = name
+        self.sound = sound
+    def speak(self):
+        return f"{self.name}: {self.sound}"
+    def __str__(self):
+        return f"<{self.name}>"
+
+class Dog(Animal):
+    def __init__(self, name):
+        super().__init__(name, "汪汪")
+    def fetch(self, item):
+        return f"{self.name} 捡回了 {item}"
+
+d = Dog("旺财")
+print(d.speak(), "|", d.fetch("飞盘"))
+print(isinstance(d, Animal), str(d))
+
+def safe_div(a, b):
+    try:
+        return a / b
+    except ZeroDivisionError:
+        return None
+    finally:
+        print(f"div({a}, {b}) 完成")
+print(safe_div(10, 4), safe_div(1, 0))
+
+def countdown(n):
+    while n > 0:
+        yield n
+        n -= 1
+print(list(countdown(5)), sum(countdown(3)))
+
+def make_profile(name, **extra):
+    tags = [f"{k}={v}" for k, v in extra.items()]
+    return f"{name}: " + ", ".join(tags)
+print(make_profile("心屿", hobby="码字", city="线上"))
+
+print(f"[{3.14159:.2f}]", f"[{1234567:,}]", f"[{'hi':^8}]")`,
     bench: `# 性能感受：转译产物由 V8 原生执行
 # 对比 Pyodide（WASM 解释）通常快 10 倍以上
 import_time_hint = "见输出面板的运行耗时"
