@@ -117,9 +117,10 @@ export function createNumpy(): NumpyPackage {
     const n = vs.length;
     return n % 2 ? vs[(n - 1) / 2] : (vs[n / 2 - 1] + vs[n / 2]) / 2;
   };
-  // 数学 ufunc（数组）
+  // 数学 ufunc（数组；标量直接走 Math 映射，py ufunc 本就收标量）
+  const SCUF: Record<string, (v: number) => number> = { sqrt: Math.sqrt, exp: Math.exp, log: Math.log, log2: Math.log2, log10: Math.log10, sin: Math.sin, cos: Math.cos, tan: Math.tan, arcsin: Math.asin, arccos: Math.acos, arctan: Math.atan, sinh: Math.sinh, cosh: Math.cosh, tanh: Math.tanh, negative: (v) => -v, sign: Math.sign, reciprocal: (v) => 1 / v };
   for (const nm of ['sqrt', 'exp', 'log', 'log2', 'log10', 'sin', 'cos', 'tan', 'arcsin', 'arccos', 'arctan', 'sinh', 'cosh', 'tanh', 'negative', 'sign', 'reciprocal']) {
-    np[nm] = (a: any) => mathUfunc(nm, a);
+    np[nm] = (a: any) => (isNd(a) ? mathUfunc(nm, a) : SCUF[nm](num2(a)));
   }
   // 常量
   np.pi = Math.PI;

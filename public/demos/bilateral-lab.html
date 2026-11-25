@@ -98,6 +98,17 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .quiz-opt{font-family:var(--font);font-size:.9rem;color:var(--fg);background:var(--card);border:1px solid var(--border);border-radius:8px;padding:7px 14px;cursor:pointer}
 .quiz-opt.right{background:rgba(22,163,74,.12);border-color:var(--ok);color:var(--ok);font-weight:700}
 .quiz-opt.wrong{background:rgba(220,38,38,.1);border-color:var(--warn);color:var(--warn)}
+.pyed{width:100%;min-height:190px;font-family:var(--mono);font-size:.78rem;line-height:1.55;background:var(--bg-soft);color:var(--fg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;white-space:pre;overflow:auto;tab-size:4}
+.pyed:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
+.pyout{font-family:var(--mono);font-size:.75rem;line-height:1.5;background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:10px 12px;overflow:auto;max-height:320px;white-space:pre;margin:10px 0 0}
+.pyout.err{color:var(--warn)}
+.cans3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0 0}
+@media(max-width:640px){.cans3{grid-template-columns:1fr}}
+.cans3 figure{margin:0;text-align:center}
+.cans3 figcaption{font-size:.75rem;color:var(--muted);margin-top:4px}
+.cans3 canvas{image-rendering:pixelated;border:1px solid var(--border);border-radius:8px;display:block;width:100%;background:var(--bg-soft)}
+.tabrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0 0}
+.tabrow .lbl{font-size:.8rem;color:var(--muted);margin-right:2px}
 footer{text-align:center;color:var(--muted);font-size:.85rem;padding:30px 0 10px}
 .to-top{position:fixed;right:16px;bottom:16px;z-index:60;width:40px;height:40px;border-radius:50%;border:1px solid var(--border);background:var(--card);color:var(--muted);font-size:1.1rem;cursor:pointer;opacity:0;pointer-events:none;transition:opacity .25s}
 .to-top.show{opacity:1;pointer-events:auto}
@@ -106,7 +117,7 @@ footer{text-align:center;color:var(--muted);font-size:.85rem;padding:30px 0 10px
 <body>
 <nav class="tocbar"><div class="in">
   <a class="back" id="backDemo" href="/demos/">← 演示集</a>
-  <a href="#s1">① 高斯之败</a><a href="#s2">② 核心思想</a><a href="#s3">③ 权重放大镜</a><a href="#s4">④ 逐像素工作</a><a href="#s5">⑤ 两个旋钮</a><a href="#s6">⑥ 全图对比</a><a href="#s7">⑦ 诞生与影响</a><a href="#s8">⑧ 测验</a><a href="#refs">参考</a>
+  <a href="#s1">① 高斯之败</a><a href="#s2">② 核心思想</a><a href="#s3">③ 权重放大镜</a><a href="#s4">④ 逐像素工作</a><a href="#s5">⑤ 两个旋钮</a><a href="#s6">⑥ 全图对比</a><a href="#s7">⑦ 诞生与影响</a><a href="#s8">⑧ 测验</a><a href="#s9">⑨ 亲手跑</a><a href="#refs">参考</a>
 </div></nav>
 
 <div class="wrap">
@@ -182,6 +193,44 @@ footer{text-align:center;color:var(--muted);font-size:.85rem;padding:30px 0 10px
       <div class="ro"><div class="k">有效邻居数（w≥0.01）</div><div class="v" id="roNv">—</div></div>
     </div>
     <p class="note">解读：<b>站在边缘上时</b>（比如圆盘与背景的交界），对面阵营的邻居亮度和中心差一大截，值域核把它们的权重打到近乎 0（表里深色格子），输出几乎不变——这就是保边的微观机制。<b>站在平坦区时</b>，邻居亮度都接近，权重接近纯空间核，输出≈窗口平均，噪声被抹掉。<b>试着把 σ<sub>r</sub> 拉到 120</b>：值域核形同虚设，权重表退化成纯空间核的形状——双边滤波变回高斯滤波。</p>
+    <div class="card">
+      <h3 style="margin-top:0">🧪 这 20 行就是它的全部（可以改，点运行）</h3>
+      <p style="font-size:.88rem">下面是一段<b>真 Python</b>——8×8 小图（左暗右亮），中心点 <code>(3,3)</code> 站在边缘上。它算出 5×5 窗口里每个邻居的权重：<b>ws 空间权</b>只看距离，<b>wr 值域权</b>只看亮度差，<b>对面阵营（v=10）会被压到 wr≈0 直接开除</b>——这正是你在上面放大镜里看到的机制。改改 <code>ss</code> / <code>sr</code>、或把 <code>y, x</code> 挪到平坦区 <code>(1,1)</code>，点运行看权重表怎么变。</p>
+      <textarea id="miniCode" class="pyed" spellcheck="false" rows="24">import math
+
+# 8x8 图：左暗右亮，一条阶跃边缘
+img = [
+    [0,  0,  0,  0, 10, 10, 10, 10],
+    [0,  0,  0,  0, 10, 10, 10, 10],
+    [0,  0,  0,  0, 10, 10, 10, 10],
+    [0,  0,  0,  0, 10, 10, 10, 10],
+    [0,  0,  0,  0, 10, 10, 10, 10],
+    [0,  0,  0,  0, 10, 10, 10, 10],
+    [0,  0,  0,  0, 10, 10, 10, 10],
+    [0,  0,  0,  0, 10, 10, 10, 10],
+]
+y, x = 3, 3          # 中心像素（正好站在边缘上）
+R = 2                # 窗口半径 -&gt; 5x5 邻域
+ss, sr = 1.5, 0.4    # 空间核 sigma_s / 值域核 sigma_r
+c = img[y][x]
+num = 0.0
+den = 0.0
+for dy in range(-R, R + 1):
+    for dx in range(-R, R + 1):
+        yy = min(max(y + dy, 0), 7)
+        xx = min(max(x + dx, 0), 7)
+        v = img[yy][xx]
+        ws = math.exp(-(dy*dy + dx*dx) / (2 * ss * ss))
+        wr = math.exp(-(v - c) * (v - c) / (2 * sr * sr))
+        mark = &#x27;  &lt;- 对面阵营，被开除&#x27; if wr &lt; 0.01 else &#x27;&#x27;
+        print(dy, dx, &#x27; v =&#x27;, v, &#x27;  ws =&#x27;, round(ws, 3), &#x27;  wr =&#x27;, round(wr, 4), mark)
+        num += ws * wr * v
+        den += ws * wr
+print(&#x27;窗口权重和 den =&#x27;, round(den, 4))
+print(&#x27;输出 = num / den =&#x27;, round(num / den, 2), &#x27;  中心 =&#x27;, c)</textarea>
+      <div class="btns"><button class="act on" id="miniRun">▶ 运行（py2js 浏览器内编译）</button><button class="act" id="miniReset">↺ 还原代码</button></div>
+      <pre id="miniOut" class="pyout">点「运行」，右边的权重表会和放大镜里的数字一一对应。</pre>
+    </div>
   </div>
 </section>
 
@@ -303,6 +352,78 @@ footer{text-align:center;color:var(--muted);font-size:.85rem;padding:30px 0 10px
   </div>
 </section>
 
+<!-- ============ ⑨ 亲手跑 ============ -->
+<section id="s9">
+  <h2>⑨ 亲手改代码，跑真的滤波</h2>
+  <p style="font-size:.9rem;color:var(--muted)">前八节你在<b>看</b>算法，这一节你来<b>跑</b>它：下面是真实的 Python 代码，由本站自研的 py2js 转译器在你的浏览器里现场编译执行——没有后端、没有预渲染，跑的就是右边这张图。换个样图、拧旋钮、或直接改代码（比如把 <code>wr</code> 的公式删掉，看看它退化成什么）。</p>
+  <div class="card">
+    <div class="tabrow"><span class="lbl">样图：</span>
+      <button class="act on" data-sample="step">阶跃边缘</button>
+      <button class="act" data-sample="noise">噪点</button>
+      <button class="act" data-sample="line">细线</button>
+      <span style="flex:1"></span>
+      <span style="font-size:.78rem;color:var(--muted)">96×64 灰度图由页面注入为 <code>IMG</code></span>
+    </div>
+    <canvas id="pgSrc" width="96" height="64" style="image-rendering:pixelated;border:1px solid var(--border);border-radius:8px;width:288px;margin:10px 0"></canvas>
+    <div class="tabrow"><span class="lbl">代码：</span>
+      <button class="act on" data-mode="pure">纯 Python 写法</button>
+      <button class="act" data-mode="np">NumPy 写法</button>
+      <span style="flex:1"></span>
+      <button class="act" id="pgReset">↺ 还原代码</button>
+      <button class="act on" id="pgRun">▶ 运行</button>
+    </div>
+    <textarea id="pgCode" class="pyed" spellcheck="false" rows="30" style="margin-top:10px">import math
+
+# 参数（右边旋钮会改这里，也可以直接手改）
+SIGMA_S = 1.5
+SIGMA_R = 20.0
+RADIUS = 2
+
+def bilateral(img, radius, sigma_s, sigma_r):
+    H = len(img)
+    W = len(img[0])
+    out = []
+    for y in range(H):
+        row = []
+        for x in range(W):
+            c = img[y][x]
+            num = 0.0
+            den = 0.0
+            for dy in range(-radius, radius + 1):
+                for dx in range(-radius, radius + 1):
+                    yy = min(max(y + dy, 0), H - 1)
+                    xx = min(max(x + dx, 0), W - 1)
+                    v = img[yy][xx]
+                    ws = math.exp(-(dy*dy + dx*dx) / (2 * sigma_s * sigma_s))
+                    wr = math.exp(-(v - c) * (v - c) / (2 * sigma_r * sigma_r))
+                    num += ws * wr * v
+                    den += ws * wr
+            row.append(num / den)
+        out.append(row)
+    return out
+
+result = bilateral(IMG, RADIUS, SIGMA_S, SIGMA_R)
+
+print(&#x27;IMG:&#x27;, len(IMG), &#x27;x&#x27;, len(IMG[0]), &#x27; sigma_s =&#x27;, SIGMA_S, &#x27; sigma_r =&#x27;, SIGMA_R, &#x27; R =&#x27;, RADIUS)
+print(&#x27;---IMG---&#x27;)
+for row in result:
+    print(&#x27; &#x27;.join([str(round(v)) for v in row]))</textarea>
+    <div class="sliders" style="margin-top:12px">
+      <label>σ<sub>s</sub> 空间尺度 <b id="lbSs">1.5</b><input type="range" id="knSs" min="0.5" max="5" step="0.1" value="1.5"></label>
+      <label>σ<sub>r</sub> 值域容忍 <b id="lbSr">20</b><input type="range" id="knSr" min="1" max="120" step="1" value="20"></label>
+      <label>半径 R <b id="lbR">2</b><input type="range" id="knR" min="1" max="4" step="1" value="2"></label>
+    </div>
+    <pre id="pgOut" class="pyout">点「运行」。结果矩阵会画到下面三张图里。</pre>
+    <div class="cans3">
+      <figure><canvas id="cvBefore" width="96" height="64"></canvas><figcaption>滤波前（IMG）</figcaption></figure>
+      <figure><canvas id="cvAfter" width="96" height="64"></canvas><figcaption>滤波后（Python 输出）</figcaption></figure>
+      <figure><canvas id="cvDiff" width="96" height="64"></canvas><figcaption>差异 |前−后| ×4</figcaption></figure>
+    </div>
+    <p class="note" style="font-size:.85rem">玩法建议：① <b>阶跃图 + σ<sub>r</sub>=20</b> → 边缘稳稳保住；把 σ<sub>r</sub> 拉到 120 → 边缘开始糊（退化成高斯，回到第①节）。② <b>细线图 + R=4</b> → 看细线是被保留还是被吃掉，和 σ<sub>r</sub> 的关系。③ 改代码：把 <code>wr</code> 那行换成 <code>1.0</code>，它就变成了纯高斯滤波——亲手验证第⑤节的极限情况。转译+运行耗时显示在输出首行（纯浏览器内编译，无需联网）。</p>
+  </div>
+</section>
+
+<!-- ============ 参考 ============ -->
 <!-- ============ 参考 ============ -->
 <section id="refs" style="border-bottom:none">
   <h2>参考与诚实声明</h2>
@@ -604,6 +725,241 @@ function flatStd(img){
   window.addEventListener('scroll',onScroll,{passive:true});
   $('toTop').addEventListener('click',function(){window.scrollTo({top:0,behavior:'smooth'})});
   onScroll();
+})();
+(function(){
+  /* ---------- ⑨ py2js 实操区 ---------- */
+  var MINI_TPL = `import math
+
+# 8x8 图：左暗右亮，一条阶跃边缘
+img = [
+    [0,  0,  0,  0, 10, 10, 10, 10],
+    [0,  0,  0,  0, 10, 10, 10, 10],
+    [0,  0,  0,  0, 10, 10, 10, 10],
+    [0,  0,  0,  0, 10, 10, 10, 10],
+    [0,  0,  0,  0, 10, 10, 10, 10],
+    [0,  0,  0,  0, 10, 10, 10, 10],
+    [0,  0,  0,  0, 10, 10, 10, 10],
+    [0,  0,  0,  0, 10, 10, 10, 10],
+]
+y, x = 3, 3          # 中心像素（正好站在边缘上）
+R = 2                # 窗口半径 -> 5x5 邻域
+ss, sr = 1.5, 0.4    # 空间核 sigma_s / 值域核 sigma_r
+c = img[y][x]
+num = 0.0
+den = 0.0
+for dy in range(-R, R + 1):
+    for dx in range(-R, R + 1):
+        yy = min(max(y + dy, 0), 7)
+        xx = min(max(x + dx, 0), 7)
+        v = img[yy][xx]
+        ws = math.exp(-(dy*dy + dx*dx) / (2 * ss * ss))
+        wr = math.exp(-(v - c) * (v - c) / (2 * sr * sr))
+        mark = '  <- 对面阵营，被开除' if wr < 0.01 else ''
+        print(dy, dx, ' v =', v, '  ws =', round(ws, 3), '  wr =', round(wr, 4), mark)
+        num += ws * wr * v
+        den += ws * wr
+print('窗口权重和 den =', round(den, 4))
+print('输出 = num / den =', round(num / den, 2), '  中心 =', c)`;
+  var PURE_TPL = `import math
+
+# 参数（右边旋钮会改这里，也可以直接手改）
+SIGMA_S = 1.5
+SIGMA_R = 20.0
+RADIUS = 2
+
+def bilateral(img, radius, sigma_s, sigma_r):
+    H = len(img)
+    W = len(img[0])
+    out = []
+    for y in range(H):
+        row = []
+        for x in range(W):
+            c = img[y][x]
+            num = 0.0
+            den = 0.0
+            for dy in range(-radius, radius + 1):
+                for dx in range(-radius, radius + 1):
+                    yy = min(max(y + dy, 0), H - 1)
+                    xx = min(max(x + dx, 0), W - 1)
+                    v = img[yy][xx]
+                    ws = math.exp(-(dy*dy + dx*dx) / (2 * sigma_s * sigma_s))
+                    wr = math.exp(-(v - c) * (v - c) / (2 * sigma_r * sigma_r))
+                    num += ws * wr * v
+                    den += ws * wr
+            row.append(num / den)
+        out.append(row)
+    return out
+
+result = bilateral(IMG, RADIUS, SIGMA_S, SIGMA_R)
+
+print('IMG:', len(IMG), 'x', len(IMG[0]), ' sigma_s =', SIGMA_S, ' sigma_r =', SIGMA_R, ' R =', RADIUS)
+print('---IMG---')
+for row in result:
+    print(' '.join([str(round(v)) for v in row]))`;
+  var NP_TPL = `import numpy as np
+
+# 参数（右边旋钮会改这里，也可以直接手改）
+SIGMA_S = 1.5
+SIGMA_R = 20.0
+RADIUS = 2
+
+def bilateral(a, radius, sigma_s, sigma_r):
+    H, W = a.shape
+    out = np.zeros((H, W))
+    for y in range(H):
+        for x in range(W):
+            c = a[y, x]
+            num = 0.0
+            den = 0.0
+            for dy in range(-radius, radius + 1):
+                for dx in range(-radius, radius + 1):
+                    yy = min(max(y + dy, 0), H - 1)
+                    xx = min(max(x + dx, 0), W - 1)
+                    v = a[yy, xx]
+                    ws = np.exp(-(dy*dy + dx*dx) / (2 * sigma_s * sigma_s))
+                    wr = np.exp(-(v - c) * (v - c) / (2 * sigma_r * sigma_r))
+                    num += ws * wr * v
+                    den += ws * wr
+            out[y, x] = num / den
+    return out
+
+a = np.array(IMG)
+result = bilateral(a, RADIUS, SIGMA_S, SIGMA_R)
+
+print('IMG:', H, 'x', W, ' dtype =', a.dtype, ' sigma_s =', SIGMA_S, ' sigma_r =', SIGMA_R)
+print('---IMG---')
+for row in result.tolist():
+    print(' '.join([str(round(v)) for v in row]))`;
+  var IW = 96, IH = 64;
+
+  function makeSample(id){
+    var rnd = mulberry32(id === 'step' ? 7 : (id === 'noise' ? 21 : 33));
+    var g = [];
+    for(var y=0;y<IH;y++){var row=[];for(var x=0;x<IW;x++){
+      var v;
+      if(id==='step'){ v = x < 48 ? 30 : 180; v += (rnd()-0.5)*20; }
+      else if(id==='noise'){ v = 90 + (rnd()-0.5)*44; }
+      else { v = 100; if(x>=46 && x<=49) v = 210; v += (rnd()-0.5)*16; }
+      row.push(Math.max(0, Math.min(255, Math.round(v))));
+    } g.push(row);}
+    return g;
+  }
+  function drawGray(cv, arr){
+    var ctx = cv.getContext('2d');
+    var im = ctx.createImageData(IW, IH);
+    for(var y=0;y<IH;y++)for(var x=0;x<IW;x++){
+      var i=(y*IW+x)*4, v=Math.max(0,Math.min(255,Math.round(arr[y][x])));
+      im.data[i]=v; im.data[i+1]=v; im.data[i+2]=v; im.data[i+3]=255;
+    }
+    ctx.putImageData(im,0,0);
+  }
+  function pyLiteral(arr){ return 'IMG = ' + JSON.stringify(arr) + '\n'; }
+
+  function ensurePy(cb){
+    if(window.PY2JS) cb(window.PY2JS);
+    else {
+      var s=document.createElement('script');
+      s.src='../assets/py2js.bundle.js';
+      s.onload=function(){ window.PY2JS ? cb(window.PY2JS) : showErr($('pgOut'),'转译器加载失败'); };
+      s.onerror=function(){ showErr($('pgOut'),'转译器加载失败：/assets/py2js.bundle.js 不可达（离线打开时请从站点内访问）'); };
+      document.head.appendChild(s);
+    }
+  }
+  function showErr(el, msg){ el.textContent = msg; el.classList.add('err'); }
+
+  function runPy(el, src){
+    if(!window.PY2JS){ showErr(el, '转译器正在加载…再点一次'); ensurePy(function(P){ runPy(el, src); }); return null; }
+    var t0 = performance.now();
+    var r = PY2JS.runPython(src);
+    var ms = (performance.now()-t0).toFixed(0);
+    return { r: r, ms: ms };
+  }
+
+  /* ----- ③ mini 块 ----- */
+  var MINI_DEF = MINI_TPL;
+  $('miniRun').addEventListener('click', function(){
+    var el = $('miniOut'); el.classList.remove('err');
+    var out = runPy(el, $('miniCode').value);
+    if(!out) return;
+    if(out.r.errors.length){ el.classList.add('err'); el.textContent = out.r.errors.map(function(e){return '行 '+e.line+': '+e.message}).join('\n'); return; }
+    el.textContent = 'py2js 转译+运行 '+out.ms+' ms\n' + out.r.out;
+  });
+  $('miniReset').addEventListener('click', function(){ $('miniCode').value = MINI_DEF; });
+  $('miniRun').click();
+
+  /* ----- ⑨ Playground ----- */
+  var pg = { sample:'step', mode:'pure', img:null };
+  var TPLS = { pure: PURE_TPL, np: NP_TPL };
+
+  function pgSetSample(id){
+    pg.sample = id;
+    document.querySelectorAll('[data-sample]').forEach(function(b){ b.classList.toggle('on', b.dataset.sample===id); });
+    pg.img = makeSample(id);
+    drawGray($('pgSrc'), pg.img);
+    pgRun();
+  }
+  function pgSetMode(m){
+    pg.mode = m;
+    document.querySelectorAll('[data-mode]').forEach(function(b){ b.classList.toggle('on', b.dataset.mode===m); });
+    $('pgCode').value = TPLS[m];
+    pgRun();
+  }
+  function pgParams(code){
+    function gp(n, d){ var m = code.match(new RegExp('^[ \\t]*'+n+' = ([\\d.]+)', 'm')); return m ? parseFloat(m[1]) : d; }
+    return { ss: gp('SIGMA_S', 1.5), sr: gp('SIGMA_R', 20), r: gp('RADIUS', 2) };
+  }
+  function pgSyncKnobs(){
+    var p = pgParams($('pgCode').value);
+    $('knSs').value = p.ss; $('lbSs').textContent = p.ss;
+    $('knSr').value = p.sr; $('lbSr').textContent = p.sr;
+    $('knR').value = p.r;  $('lbR').textContent = p.r;
+  }
+  var pgTimer = null;
+  function pgRun(){
+    var el = $('pgOut'); el.classList.remove('err');
+    if(!window.PY2JS){ ensurePy(function(){ pgRun(); }); el.textContent = '转译器加载中…'; return; }
+    var code = $('pgCode').value;
+    var p = pgParams(code);
+    $('lbSs').textContent = p.ss; $('lbSr').textContent = p.sr; $('lbR').textContent = p.r;
+    var out = runPy(el, pyLiteral(pg.img) + code);
+    if(!out) return;
+    var r = out.r;
+    if(r.errors.length){ el.classList.add('err'); el.textContent = 'py2js 转译/运行 '+out.ms+' ms\n' + r.errors.map(function(e){return '行 '+e.line+': '+e.message}).join('\n'); return; }
+    var seg = r.out.split('---IMG---\n');
+    var text = seg[0].replace(/\n+$/,'');
+    var after = null;
+    if(seg.length > 1){
+      var rows = seg[1].split('\n').filter(function(l){return l.trim().length;}).map(function(l){return l.trim().split(/\s+/).map(Number);});
+      if(rows.length === IH && rows[0].length === IW) after = rows;
+    }
+    el.textContent = 'py2js 转译+运行 '+out.ms+' ms（浏览器内现场编译，无后端）\n' + (text || '(无文本输出)');
+    drawGray($('cvBefore'), pg.img);
+    if(after){
+      drawGray($('cvAfter'), after);
+      var df = pg.img.map(function(row,y){ return row.map(function(v,x){ return Math.abs(v - after[y][x]) * 4; }); });
+      drawGray($('cvDiff'), df);
+    } else {
+      el.textContent += '\n(未检测到 ---IMG--- 结果矩阵：代码可能没有按约定输出，结果图未更新)';
+    }
+  }
+  document.querySelectorAll('[data-sample]').forEach(function(b){ b.addEventListener('click', function(){ pgSetSample(b.dataset.sample); }); });
+  document.querySelectorAll('[data-mode]').forEach(function(b){ b.addEventListener('click', function(){ pgSetMode(b.dataset.mode); }); });
+  $('pgRun').addEventListener('click', pgRun);
+  $('pgReset').addEventListener('click', function(){ $('pgCode').value = TPLS[pg.mode]; pgSyncKnobs(); pgRun(); });
+  [['knSs','SIGMA_S'],['knSr','SIGMA_R'],['knR','RADIUS']].forEach(function(kn){
+    $(kn[0]).addEventListener('input', function(){
+      var code = $('pgCode').value;
+      var re = new RegExp('(^[ \\t]*'+kn[1]+' = )[\\d.]+', 'm');
+      var v = $(kn[0]).value;
+      $('pgCode').value = re.test(code) ? code.replace(re, '$1'+v) : code;
+      if(kn[0]==='knR') v = String(Math.round(parseFloat(v)));
+      if(kn[0]==='knSs') $('lbSs').textContent = v; else if(kn[0]==='knSr') $('lbSr').textContent = v; else $('lbR').textContent = Math.round(parseFloat(v));
+      if(pgTimer) clearTimeout(pgTimer);
+      pgTimer = setTimeout(pgRun, 450);
+    });
+  });
+  $('pgCode').addEventListener('input', function(){ pgSyncKnobs(); });
+  pgSetSample('step');
 })();
 </script>
 </div>

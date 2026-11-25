@@ -45,7 +45,7 @@ const $str = (x) => {
   }
   if (x === null || x === undefined) return 'None';
   if (typeof x === 'boolean') return x ? 'True' : 'False';
-  if (typeof x === 'number') return Number.isNaN(x) ? 'nan' : String(x);
+  if (typeof x === 'number') return Number.isNaN(x) ? 'nan' : x === Infinity ? 'inf' : x === -Infinity ? '-inf' : String(x);
   if (typeof x === 'string') return x;
   return $repr(x);
 };
@@ -59,7 +59,7 @@ const $repr = (x) => {
   }
   if (x === null || x === undefined) return 'None';
   if (typeof x === 'boolean') return x ? 'True' : 'False';
-  if (typeof x === 'number') return Number.isNaN(x) ? 'nan' : String(x);
+  if (typeof x === 'number') return Number.isNaN(x) ? 'nan' : x === Infinity ? 'inf' : x === -Infinity ? '-inf' : String(x);
   if (typeof x === 'string') return "'" + x.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
   if (Array.isArray(x)) return x.__pytuple ? '(' + x.map($repr).join(', ') + (x.length === 1 ? ',' : '') + ')' : '[' + x.map($repr).join(', ') + ']';
   if (x instanceof Set) return '{' + Array.from(x).map($repr).join(', ') + '}';
@@ -406,6 +406,18 @@ const $next2 = (g) => { if (g && typeof g.next === 'function') { const r = g.nex
 // ---- numpy 等模块钩子（模块 prelude 运行时赋值；未加载时保持 null，零开销） ----
 let $UO = null, $UC = null, $UEQ = null, $UI = null, $UR = null, $UN = null;
 const $MODULES = {};
+  $MODULES.math = {
+    exp: Math.exp, log: (x, base) => base === undefined ? Math.log(x) : Math.log(x) / Math.log(base), log2: Math.log2, log10: Math.log10,
+    sqrt: Math.sqrt, floor: Math.floor, ceil: Math.ceil, trunc: Math.trunc,
+    sin: Math.sin, cos: Math.cos, tan: Math.tan, asin: Math.asin, acos: Math.acos, atan: Math.atan, atan2: Math.atan2,
+    sinh: Math.sinh, cosh: Math.cosh, tanh: Math.tanh, pow: Math.pow, fabs: Math.abs,
+    degrees: (x) => x * 180 / Math.PI, radians: (x) => x * Math.PI / 180, hypot: Math.hypot, fmod: (x, y) => x % y,
+    copysign: (x, y) => (y < 0 || (y === 0 && 1 / y < 0)) ? -Math.abs(x) : Math.abs(x),
+    isnan: Number.isNaN, isinf: (x) => typeof x === 'number' && !Number.isNaN(x) && !isFinite(x),
+    gcd: (a, b) => { a = Math.abs(Math.trunc(a)); b = Math.abs(Math.trunc(b)); while (b) { const t = a % b; a = b; b = t; } return a; },
+    factorial: (n) => { if (!Number.isInteger(n) || n < 0) throw $mkexc('ValueError', ['factorial() not defined for negative or non-integer values']); let r = 1; for (let i = 2; i <= n && i <= 170; i++) r *= i; if (n > 170) throw $mkexc('OverflowError', ['factorial() result too large']); return r; },
+    pi: Math.PI, e: Math.E, tau: 2 * Math.PI, inf: Infinity, nan: NaN
+  };
 const $use = (name) => { if (!Object.prototype.hasOwnProperty.call($MODULES, name)) throw new Error("ModuleNotFoundError: No module named '" + name + "'（当前环境仅支持 numpy，import 请写在文件顶部）"); return $MODULES[name]; };
 const $MOBJ = (o, m, args, kw) => {
   if (o && typeof o === 'object' && !o.__cls && !o.__pyexc && typeof o[m] === 'function') {
@@ -852,7 +864,7 @@ function createParser(toks: Tok[], errs: Py2JsError[]) {
         case 'import': {
           pos++;
           const mod = expectName();
-          if (mod !== 'numpy') { errs.push({ line: t.line, msg: `暂不支持 import ${mod}（当前仅支持 import numpy）` }); throw new ParseBreak(); }
+          if (mod !== 'numpy' && mod !== 'math') { errs.push({ line: t.line, msg: `暂不支持 import ${mod}（当前支持 import numpy / import math）` }); throw new ParseBreak(); }
           let asname: string | null = null;
           if (eat('as')) asname = expectName();
           return { type: 'import', module: mod, asname, line: t.line };
@@ -860,7 +872,7 @@ function createParser(toks: Tok[], errs: Py2JsError[]) {
         case 'from': {
           pos++;
           const mod = expectName();
-          if (mod !== 'numpy') { errs.push({ line: t.line, msg: `暂不支持 from ${mod} import（当前仅支持 numpy）` }); throw new ParseBreak(); }
+          if (mod !== 'numpy' && mod !== 'math') { errs.push({ line: t.line, msg: `暂不支持 from ${mod} import（当前支持 numpy / math）` }); throw new ParseBreak(); }
           if (!eatKw('import')) { errs.push({ line: t.line, msg: "期望 'import'" }); throw new ParseBreak(); }
           const names: { name: string; asname: string | null }[] = [];
           do {
