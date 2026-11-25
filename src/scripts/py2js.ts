@@ -33,7 +33,7 @@ const $type = (x) => x === null || x === undefined ? 'NoneType'
   : typeof x === 'function' ? 'function'
   : typeof x === 'object' ? (x.__cls ? x.__cls : 'dict') : 'unknown';
 const $str = (x) => {
-  if (x && x.__pyexc) return x.msg;
+  if (x && x.__pyexc) return x.type === 'KeyError' && x.args && x.args.length ? $repr(x.args[0]) : x.msg;
   if (x && typeof x === 'object' && x.__cls) {
     let c = x.__cls;
     while (c) { const t = $CLS[c]; if (t && t.__str__) return $str(t.__str__(x)); c = t && t.__base; }
@@ -46,7 +46,7 @@ const $str = (x) => {
   return $repr(x);
 };
 const $repr = (x) => {
-  if (x && x.__pyexc) return x.type + "('" + x.msg + "')";
+  if (x && x.__pyexc) return x.type + '(' + (x.args && x.args.length ? x.args.map($repr).join(', ') : '') + ')';
   if (x && typeof x === 'object' && x.__cls) {
     let c = x.__cls;
     while (c) { const t = $CLS[c]; if (t && t.__repr__) return $repr(t.__repr__(x)); if (t && t.__str__) return $repr(t.__str__(x)); c = t && t.__base; }
@@ -71,14 +71,16 @@ const $eq = (a, b) => {
   const ka = Object.keys(a), kb = Object.keys(b);
   return ka.length === kb.length && ka.every(k => Object.prototype.hasOwnProperty.call(b, k) && $eq(a[k], b[k]));
 };
+const $booln = (x) => typeof x === 'boolean' ? (x ? 1 : 0) : x;
+const $isnum = (x) => typeof x === 'number' || typeof x === 'boolean';
 const $add = (a, b) => {
-  if (typeof a === 'number' && typeof b === 'number') return a + b;
+  if ($isnum(a) && $isnum(b)) return $booln(a) + $booln(b);
   if (Array.isArray(a) && Array.isArray(b)) return a.concat(b);
   if (typeof a === 'string' || typeof b === 'string') return $str(a) + $str(b);
   throw new TypeError('不支持的 + 操作数类型（' + $type(a) + ' + ' + $type(b) + '）');
 };
 const $mul = (a, b) => {
-  if (typeof a === 'number' && typeof b === 'number') return a * b;
+  if ($isnum(a) && $isnum(b)) return $booln(a) * $booln(b);
   const rep = (v, n) => { n = Math.floor(n); if (n < 0) n = 0; if (typeof v === 'string') return v.repeat(n); const r = []; for (let i = 0; i < n; i++) r.push(...v); return r; };
   if (typeof a === 'string' && typeof b === 'number') return rep(a, b);
   if (typeof b === 'string' && typeof a === 'number') return rep(b, a);
@@ -118,6 +120,11 @@ const $zip = (...xs) => {
   return out;
 };
 const $cmpv = (a, b) => {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    const n = Math.min(a.length, b.length);
+    for (let i = 0; i < n; i++) { const c = $cmpv(a[i], b[i]); if (c !== 0) return c; }
+    return a.length < b.length ? -1 : a.length > b.length ? 1 : 0;
+  }
   const ok = (typeof a === 'number' && typeof b === 'number') || (typeof a === 'string' && typeof b === 'string');
   if (!ok) { if ($eq(a, b)) return 0; throw new TypeError('比较失败：<' + $type(a) + '> 与 <' + $type(b) + '> 不可比较'); }
   return a < b ? -1 : a > b ? 1 : 0;
@@ -131,13 +138,12 @@ const $sorted = (x, key, rev) => {
 const $sortInplace = (x, key, rev) => {
   x.sort(key ? (p, q) => $cmpv(key(p), key(q)) : $cmpv);
   if (rev) x.reverse();
-  return x;
 };
-const $minmax = (xs, isMin) => {
+const $minmax = (xs, isMin, key) => {
   const arr = xs.length === 1 ? $arr(xs[0]) : xs;
   if (!arr.length) throw new Error('ValueError: 序列为空');
   let best = arr[0];
-  for (const v of arr) { const c = $cmpv(v, best); if (isMin ? c < 0 : c > 0) best = v; }
+  for (const v of arr) { const c = key ? $cmpv(key(v), key(best)) : $cmpv(v, best); if (isMin ? c < 0 : c > 0) best = v; }
   return best;
 };
 const $sum = (x, start) => $arr(x).reduce((s, v) => s + v, start === undefined ? 0 : start);
@@ -145,7 +151,7 @@ const $int = (x, base) => {
   if (base !== undefined && typeof x === 'string') return parseInt(x, base);
   if (typeof x === 'boolean') return x ? 1 : 0;
   if (typeof x === 'number') { if (Number.isNaN(x)) throw new Error('ValueError: int() 参数无效'); return Math.trunc(x); }
-  if (typeof x === 'string') { const t = x.trim(); if (!/^[+-]?\d+$/.test(t)) throw new Error("ValueError: invalid literal for int(): '" + x + "'"); return parseInt(t, 10); }
+  if (typeof x === 'string') { const t = x.trim(); if (!/^[+-]?\d+$/.test(t)) throw new Error("ValueError: invalid literal for int() with base 10: '" + x + "'"); return parseInt(t, 10); }
   throw new TypeError('int() 参数类型不支持');
 };
 const $float = (x) => {
@@ -191,7 +197,10 @@ const $in = (x, c) => {
   throw new TypeError('in 的右侧不可成员检测（' + $type(c) + '）');
 };
 const $idx = (seq, i) => {
-  if (seq && typeof seq === 'object' && !Array.isArray(seq) && !(seq instanceof Set)) return seq[i];
+  if (seq && typeof seq === 'object' && !Array.isArray(seq) && !(seq instanceof Set)) {
+    if (!Object.prototype.hasOwnProperty.call(seq, i)) throw $mkexc('KeyError', [i]);
+    return seq[i];
+  }
   if (seq instanceof Set) throw new TypeError('set 不可索引');
   const n = seq.length, j = i < 0 ? n + i : i;
   if (j < 0 || j >= n) throw new Error('IndexError: 索引越界（' + String(i) + '，长度 ' + n + '）');
@@ -221,7 +230,7 @@ const $slice = (seq, start, end, step) => {
 const $print = (items, sep, end) => { $OUT.push(items.map($str).join(sep === undefined ? ' ' : sep) + (end === undefined ? '\n' : end)); };
 const $assert = (x, msg) => { if (!$bool(x)) throw new Error('AssertionError' + (msg !== undefined ? ': ' + $str(msg) : '')); };
 const $dget = (d, k, def) => Object.prototype.hasOwnProperty.call(d, k) ? d[k] : (def === undefined ? null : def);
-const $dpop = (d, k, def) => { if (Object.prototype.hasOwnProperty.call(d, k)) { const v = d[k]; delete d[k]; return v; } if (def !== undefined) return def; throw new Error('KeyError: ' + $repr(k)); };
+const $dpop = (d, k, def) => { if (Object.prototype.hasOwnProperty.call(d, k)) { const v = d[k]; delete d[k]; return v; } if (def !== undefined) return def; throw $mkexc('KeyError', [k]); };
 const $dupdate = (d, o) => {
   if (o && typeof o === 'object' && !Array.isArray(o) && !(o instanceof Set)) Object.assign(d, o);
   else for (const kv of $arr(o)) d[kv[0]] = kv[1];
@@ -278,8 +287,12 @@ const $ga = (o, k) => {
   return o[k];
 };
 const $truediv = (a, b) => { if (b === 0) throw new Error('ZeroDivisionError: division by zero'); return a / b; };
+const $sub = (a, b) => { if ($isnum(a) && $isnum(b)) return $booln(a) - $booln(b); if (a instanceof Set && b instanceof Set) { const r = new Set(a); for (const v of b) r.delete(v); return r; } throw new TypeError('不支持的 - 操作数类型（' + $type(a) + ' - ' + $type(b) + '）'); };
+const $band = (a, b) => { if ($isnum(a) && $isnum(b)) return $booln(a) & $booln(b); if (a instanceof Set && b instanceof Set) { const r = new Set(); for (const v of a) if (b.has(v)) r.add(v); return r; } throw new TypeError('不支持的 & 操作数类型'); };
+const $bor = (a, b) => { if ($isnum(a) && $isnum(b)) return $booln(a) | $booln(b); if (a instanceof Set && b instanceof Set) { const r = new Set(a); for (const v of b) r.add(v); return r; } throw new TypeError('不支持的 | 操作数类型'); };
+const $bxor = (a, b) => { if ($isnum(a) && $isnum(b)) return $booln(a) ^ $booln(b); if (a instanceof Set && b instanceof Set) { const r = new Set(a); for (const v of b) { if (r.has(v)) r.delete(v); else r.add(v); } return r; } throw new TypeError('不支持的 ^ 操作数类型'); };
 const $delit = (o, i) => { if (Array.isArray(o)) { const n = o.length, j = i < 0 ? n + i : i; if (j < 0 || j >= n) throw new Error('IndexError: del 索引越界'); o.splice(j, 1); } else delete o[i]; };
-const $mkexc = (ty, args) => ({ __pyexc: true, type: ty, msg: args && args.length ? $str(args[0]) : '' });
+const $mkexc = (ty, args) => ({ __pyexc: true, type: ty, msg: args && args.length ? $str(args[0]) : '', args: args || [] });
 const $pyerr = (e) => {
   if (e && e.__pyexc) return e;
   const m = e instanceof Error ? e.message : String(e);
@@ -291,7 +304,7 @@ const $fmt = (v, spec) => {
   let s = spec, fill = ' ', align = '', zfill = false, width = 0, comma = false, prec = -1, ty = '';
   const last = s.slice(-1);
   if (/^[bdoxXfeEgGns%]$/.test(last)) { ty = last; s = s.slice(0, -1); }
-  let m = /\.([1-9]\d*)$/.exec(s);
+  let m = /\.(\d+)$/.exec(s);
   if (m) { prec = +m[1]; s = s.slice(0, m.index); }
   if (s.endsWith(',')) { comma = true; s = s.slice(0, -1); }
   m = /^([\s\S]?)([<>^])/.exec(s);
@@ -695,7 +708,10 @@ function createParser(toks: Tok[], errs: Py2JsError[]) {
     if (!eat(')')) {
       while (true) {
         if (eat('*')) { star = expectName(); if (!eat(',') ) { expect(')'); break; } continue; }
-        if (eat('**')) { kwarg = expectName(); expect(')'); break; }
+        if (eat('**')) {
+          if (star) { errs.push({ line: peek().line, msg: '暂不支持 *args 与 **kwargs 同时使用' }); throw new ParseBreak(); }
+          kwarg = expectName(); expect(')'); break;
+        }
         const pn = expectName();
         let pd: Node | null = null;
         if (eat('=')) { pd = expr(); seenDef = true; }
@@ -1198,7 +1214,7 @@ function createParser(toks: Tok[], errs: Py2JsError[]) {
         if (specIdx >= 0) {
           const spec = exprSrc.slice(specIdx + 1).trim();
           exprSrc = exprSrc.slice(0, specIdx);
-          const SP_RE = /^(?:([^0{}<>^\d])?([<>^]))?(\d+)?(,)?(?:\.([1-9]\d*))?([bdoxXfeEgGns%])?$/;
+          const SP_RE = /^(?:([^0{}<>^\d])?([<>^]))?(\d+)?(,)?(?:\.(\d+))?([bdoxXfeEgGns%])?$/;
           if (spec && !SP_RE.test(spec)) { errs.push({ line, msg: `不支持的格式说明符 '${spec}'` }); throw new ParseBreak(); }
           const node = miniExpr(exprSrc, line);
           parts.push({ expr: node, conv, dbg, spec: spec || null, src: exprSrc });
@@ -1235,8 +1251,8 @@ function createParser(toks: Tok[], errs: Py2JsError[]) {
 // 产物优先级层级（用于括号判断）
 const P_LAMBDA = 1, P_TERNARY = 2, P_OR = 3, P_NOT = 4, P_CMP = 5, P_BIT = 6, P_SHIFT = 9, P_ADD = 10, P_MUL = 11, P_UNARY = 12, P_POW = 13, P_ATOM = 15;
 
-const BIN_HELPER: Record<string, string> = { '+': '$add', '*': '$mul', '%': '$mod', '//': '$floordiv', '/': '$truediv' };
-const BIN_DIRECT: Record<string, string> = { '-': '-', '&': '&', '|': '|', '^': '^', '<<': '<<', '>>': '>>' };
+const BIN_HELPER: Record<string, string> = { '+': '$add', '*': '$mul', '%': '$mod', '//': '$floordiv', '/': '$truediv', '-': '$sub', '&': '$band', '|': '$bor', '^': '$bxor' };
+const BIN_DIRECT: Record<string, string> = { '<<': '<<', '>>': '>>' };
 
 const NAME2HELPER: Record<string, string> = {
   len: '$len', abs: '$abs', sum: '$sum', sorted: '$sorted', reversed: '$reversed', enumerate: '$enumerate',
@@ -1305,7 +1321,7 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
       }
       case 'attr': return `$ga(${genE(n.obj, P_ATOM)}, ${JSON.stringify(n.name)})`;
       case 'star': case 'dstar': throw new Error('内部：展开语法只能用于调用实参或列表/字典字面量');
-      case 'sub': return `${genE(n.obj, P_ATOM)} === null ? (() => { throw new Error("TypeError: 'NoneType' 不可索引"); })() : $idx(${genE(n.obj, 0)}, ${genE(n.idx, 0)})`.replace(/^/, '');
+      case 'sub': return `(${genE(n.obj, P_ATOM)} === null ? (() => { throw new Error("TypeError: 'NoneType' 不可索引"); })() : $idx(${genE(n.obj, 0)}, ${genE(n.idx, 0)}))`;
       case 'slice': {
         const a = (x: Node) => x ? genE(x, 0) : 'undefined';
         return `$slice(${genE(n.obj, 0)}, ${a(n.lo)}, ${a(n.hi)}, ${a(n.step)})`;
@@ -1324,8 +1340,8 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
       if (p.lit !== undefined) s += p.lit.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
       else {
         const inner = genE(p.expr, 0);
-        const v0 = p.conv === 'r' ? `$repr(${inner})` : (p.conv === 's' ? `$str(${inner})` : inner);
-        const val = p.spec ? `$fmt(${v0}, ${JSON.stringify(p.spec)})` : v0;
+        const base = p.conv === 'r' ? `$repr(${inner})` : p.conv === 's' ? `$str(${inner})` : inner;
+        const val = p.spec ? `$fmt(${base}, ${JSON.stringify(p.spec)})` : `$str(${base})`;
         if (p.dbg) {
           const label = p.src.replace(/[\\`$"]/g, ' ');
           s += `${JSON.stringify(label + '=')}\${$repr(${inner})}`;
@@ -1379,7 +1395,10 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
       if (idx === items.length - 1) return genE(head, P_TERNARY);
       const rest = fold(items, op, idx + 1);
       const h = genE(head, P_TERNARY + 1);
-      return op === 'and' ? `($bool(${h}) ? ${rest} : ${h})` : `($bool(${h}) ? ${h} : ${rest})`;
+      const t = `$sh${++uid}`;
+      return op === 'and'
+        ? `(() => { let ${t} = ${h}; return $bool(${t}) ? ${rest} : ${t}; })()`
+        : `(() => { let ${t} = ${h}; return $bool(${t}) ? ${t} : ${rest}; })()`;
     };
     const js = fold(n.items, n.op);
     return prec > P_TERNARY ? `(${js})` : js;
@@ -1492,7 +1511,7 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
       case 'range': noKw(); return `$range(${all() || '0'})`;
       case 'abs': noKw(); return `Math.abs(${a(0)})`;
       case 'sum': noKw(); return `$sum(${a(0)}, ${a(1, 'undefined')})`;
-      case 'min': case 'max': noKw(); return n.args.length === 1 && !hasStar ? `$minmax($arr(${a(0)}), ${name === 'min'})` : `$minmax([${all()}], ${name === 'min'})`;
+      case 'min': case 'max': noKw(['key']); { const kf = kwGet(n, 'key') ? genE(kwGet(n, 'key')!, 0) : 'null'; return n.args.length === 1 && !hasStar ? `$minmax($arr(${a(0)}), ${name === 'min'}, ${kf})` : `$minmax([${all()}], ${name === 'min'}, ${kf})`; }
       case 'round': noKw(); return `$round(${a(0)}, ${a(1, 'undefined')})`;
       case 'sorted': noKw(['key', 'reverse']); return `$sorted(${a(0)}, ${kwGet(n, 'key') ? genE(kwGet(n, 'key')!, 0) : 'null'}, ${kwGet(n, 'reverse') ? `$bool(${genE(kwGet(n, 'reverse')!, 0)})` : 'false'})`;
       case 'reversed': noKw(); return `$reversed(${a(0)})`;
@@ -1566,10 +1585,10 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
       case 'extend': noKw(); return `$extend(${obj}, ${a(0)})`;
       case 'insert': noKw(); return `$insert(${obj}, ${a(0)}, ${a(1)})`;
       case 'pop': noKw(); return n.args.length ? `$pop(${obj}, ${a(0)})` : `$pop(${obj})`;
-      case 'remove': noKw(); return `$remove(${obj}, ${a(0)})`;
-      case 'index': noKw(); return `$index(${obj}, ${a(0)})`;
+      case 'remove': noKw(); return `(${obj} instanceof Set ? $sremove(${obj}, ${a(0)}) : $remove(${obj}, ${a(0)}))`;
+      case 'index': noKw(); return `(typeof ${obj} === 'string' ? ${obj}.indexOf($str(${a(0)})) : $index(${obj}, ${a(0)}))`;
       case 'count': noKw(); return `$count(${obj}, ${a(0)})`;
-      case 'reverse': noKw(); return `${obj}.reverse()`;
+      case 'reverse': noKw(); return `(${obj}.reverse(), undefined)`;
       case 'sort': noKw(['key', 'reverse']); return `$sortInplace(${obj}, ${kwGet(n, 'key') ? genE(kwGet(n, 'key')!, 0) : 'null'}, ${kwGet(n, 'reverse') ? `$bool(${genE(kwGet(n, 'reverse')!, 0)})` : 'false'})`;
       case 'copy': noKw(); return `$copy(${obj})`;
       case 'clear': noKw(); return `$clear(${obj})`;
@@ -1916,18 +1935,10 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
   function genFunc(st: Node) {
     const hasYield = scanYield(st.body);
     const params = st.params.map((p: any) => p.def ? `${ident(p.name)} = ${genE(p.def, 0)}` : ident(p.name));
-    if (st.star && st.kwarg) {
-      const all = `$all${++uid}`;
-      W(`function${hasYield ? '*' : ''} ${ident(st.name)}(...${all}) {`);
-      ind++;
-      W(`const ${ident(st.star)} = ${all}.slice(0, ${st.params.length});`);
-      W(`const ${ident(st.kwarg)} = ${all}.length > ${st.params.length} ? ${all}[${st.params.length}] : {};`);
-    } else {
-      if (st.star) params.push(`...${ident(st.star)}`);
-      if (st.kwarg) params.push(ident(st.kwarg));
-      W(`function${hasYield ? '*' : ''} ${ident(st.name)}(${params.join(', ')}) {`);
-      ind++;
-    }
+    if (st.star) params.push(`...${ident(st.star)}`);
+    if (st.kwarg) params.push(`${ident(st.kwarg)} = {}`);
+    W(`function${hasYield ? '*' : ''} ${ident(st.name)}(${params.join(', ')}) {`);
+    ind++;
     const addedU: string[] = [];
     const pushU = (nm: string) => { if (!userBindings.has(nm)) { userBindings.add(nm); addedU.push(nm); } };
     for (const p of st.params) pushU(p.name);
