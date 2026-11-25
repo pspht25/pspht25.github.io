@@ -1,0 +1,2104 @@
+// 轻量 Python → JavaScript 转译器（浏览器内即时转译）
+// 覆盖：变量 / 算术(含 // % ** 链比较) / 控制流 / 函数(默认参数 *args) / 字符串(f-string/raw)
+//      列表 / 字典 / 集合 / 元组 / 切片 / 负索引 / 推导式 / lambda / 常用内建与方法
+// 不支持（明确报错）：类 / try-except / async / 装饰器 / 第三方库 / open / input / format
+// 作者：A-编程 2026-11-24
+
+export interface Py2JsError { line: number; msg: string }
+export interface TranspileResult {
+  js: string;   // 完整可执行源码（runtime + 模块 prelude + IIFE 包裹的用户代码）
+  body: string; // 用户代码对应的 JS（展示用）
+  errors: Py2JsError[];
+  imports: string[]; // 依赖的模块（如 numpy）
+}
+
+
+// ---------------- 运行时 helpers（注入产物头部） ----------------
+export const RUNTIME = String.raw`
+const $OUT = [];
+const $bool = (x) => x && x.__ndarray ? (x.size === 1 ? !!x.data[0] : (() => { throw new Error('ValueError: 含多个元素的数组的真值不明确，请用 a.all() 或 a.any()'); })())
+  : x === null || x === undefined ? false
+  : typeof x === 'boolean' ? x
+  : typeof x === 'number' ? (x !== 0 && !Number.isNaN(x))
+  : typeof x === 'string' ? x.length > 0
+  : Array.isArray(x) ? x.length > 0
+  : x instanceof Set ? x.size > 0
+  : typeof x === 'object' ? Object.keys(x).length > 0
+  : true;
+const $not = (x) => !$bool(x);
+const $type = (x) => x === null || x === undefined ? 'NoneType'
+  : x && x.__pyexc ? x.type
+  : typeof x === 'boolean' ? 'bool'
+  : typeof x === 'number' ? (Number.isInteger(x) ? 'int' : 'float')
+  : typeof x === 'string' ? 'str'
+  : Array.isArray(x) ? 'list'
+  : x instanceof Set ? 'set'
+  : typeof x === 'function' ? 'function'
+  : typeof x === 'object' ? (x.__cls ? x.__cls : 'dict') : 'unknown';
+const $str = (x) => {
+  if (x && x.__pyexc) return x.type === 'KeyError' && x.args && x.args.length ? $repr(x.args[0]) : x.msg;
+  if ($UR && x && x.__ndarray) return $UR(x, 's');
+  if (x && typeof x === 'object' && x.__cls) {
+    let c = x.__cls;
+    while (c) { const t = $CLS[c]; if (t && t.__str__) return $str(t.__str__(x)); c = t && t.__base; }
+    return '<' + x.__cls + ' 对象>';
+  }
+  if (x === null || x === undefined) return 'None';
+  if (typeof x === 'boolean') return x ? 'True' : 'False';
+  if (typeof x === 'number') return Number.isNaN(x) ? 'nan' : String(x);
+  if (typeof x === 'string') return x;
+  return $repr(x);
+};
+const $repr = (x) => {
+  if (x && x.__pyexc) return x.type + '(' + (x.args && x.args.length ? x.args.map($repr).join(', ') : '') + ')';
+  if ($UR && x && x.__ndarray) return $UR(x, 'r');
+  if (x && typeof x === 'object' && x.__cls) {
+    let c = x.__cls;
+    while (c) { const t = $CLS[c]; if (t && t.__repr__) return $repr(t.__repr__(x)); if (t && t.__str__) return $repr(t.__str__(x)); c = t && t.__base; }
+    return '<' + x.__cls + ' 对象>';
+  }
+  if (x === null || x === undefined) return 'None';
+  if (typeof x === 'boolean') return x ? 'True' : 'False';
+  if (typeof x === 'number') return Number.isNaN(x) ? 'nan' : String(x);
+  if (typeof x === 'string') return "'" + x.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
+  if (Array.isArray(x)) return x.__pytuple ? '(' + x.map($repr).join(', ') + (x.length === 1 ? ',' : '') + ')' : '[' + x.map($repr).join(', ') + ']';
+  if (x instanceof Set) return '{' + Array.from(x).map($repr).join(', ') + '}';
+  if (typeof x === 'function') return '<function>';
+  if (typeof x === 'object') return '{' + Object.entries(x).map(([k, v]) => $repr(k) + ': ' + $repr(v)).join(', ') + '}';
+  return String(x);
+};
+const $eq = (a, b) => {
+  if (a === b) return true;
+  if ($UEQ && ((a && a.__ndarray) || (b && b.__ndarray))) return $UEQ(a, b, false);
+  if ((a && a.__cls) || (b && b.__cls) || (a && a.__pyexc) || (b && b.__pyexc)) return false;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return a === b;
+  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((v, i) => $eq(v, b[i]));
+  if (a instanceof Set && b instanceof Set) return a.size === b.size && Array.from(a).every(v => b.has(v));
+  const ka = Object.keys(a), kb = Object.keys(b);
+  return ka.length === kb.length && ka.every(k => Object.prototype.hasOwnProperty.call(b, k) && $eq(a[k], b[k]));
+};
+const $booln = (x) => typeof x === 'boolean' ? (x ? 1 : 0) : x;
+const $isnum = (x) => typeof x === 'number' || typeof x === 'boolean';
+const $add = (a, b) => {
+  if ($UO && ((a && a.__ndarray) || (b && b.__ndarray))) return $UO('+', a, b);
+  if ($isnum(a) && $isnum(b)) return $booln(a) + $booln(b);
+  if (Array.isArray(a) && Array.isArray(b)) return a.concat(b);
+  if (typeof a === 'string' || typeof b === 'string') return $str(a) + $str(b);
+  throw new TypeError('不支持的 + 操作数类型（' + $type(a) + ' + ' + $type(b) + '）');
+};
+const $mul = (a, b) => {
+  if ($UO && ((a && a.__ndarray) || (b && b.__ndarray))) return $UO('*', a, b);
+  if ($isnum(a) && $isnum(b)) return $booln(a) * $booln(b);
+  const rep = (v, n) => { n = Math.floor(n); if (n < 0) n = 0; if (typeof v === 'string') return v.repeat(n); const r = []; for (let i = 0; i < n; i++) r.push(...v); return r; };
+  if (typeof a === 'string' && typeof b === 'number') return rep(a, b);
+  if (typeof b === 'string' && typeof a === 'number') return rep(b, a);
+  if (Array.isArray(a) && typeof b === 'number') return rep(a, b);
+  if (Array.isArray(b) && typeof a === 'number') return rep(b, a);
+  throw new TypeError('不支持的 * 操作数类型');
+};
+const $mod = (a, b) => {
+  if ($UO && ((a && a.__ndarray) || (b && b.__ndarray))) return $UO('%', a, b);
+  if (typeof a === 'string') throw new TypeError('字符串 % 格式化不支持，请改用 f-string');
+  if (b === 0) throw new Error('ZeroDivisionError: division by zero');
+  return ((a % b) + b) % b;
+};
+const $floordiv = (a, b) => {
+  if ($UO && ((a && a.__ndarray) || (b && b.__ndarray))) return $UO('//', a, b);
+  if (b === 0) throw new Error('ZeroDivisionError: division by zero');
+  return Math.floor(a / b);
+};
+const $len = (x) => {
+  if (typeof x === 'string' || Array.isArray(x)) return x.length;
+  if (x instanceof Set) return x.size;
+  if (x && typeof x === 'object') return Object.keys(x).length;
+  throw new TypeError("对象没有 len()（" + $type(x) + "）");
+};
+const $iter = (x) => {
+  if (x && x.__ndarray) return x.tolist();
+  if (Array.isArray(x) || typeof x === 'string' || x instanceof Set) return x;
+  if (x && typeof x === 'object' && typeof x[Symbol.iterator] === 'function') return x;
+  if (x && typeof x === 'object') return Object.keys(x);
+  throw new TypeError('对象不可迭代（' + $type(x) + '）');
+};
+const $arr = (x) => Array.isArray(x) ? x : Array.from($iter(x));
+const $items = (d) => Object.entries(d);
+const $enumerate = (x, s) => { let i = s === undefined ? 0 : s; return $arr($iter(x)).map(v => [i++, v]); };
+const $zip = (...xs) => {
+  const arrs = xs.map($arr);
+  const n = Math.min(...arrs.map(a => a.length));
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(arrs.map(a => a[i]));
+  return out;
+};
+const $cmpv = (a, b) => {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    const n = Math.min(a.length, b.length);
+    for (let i = 0; i < n; i++) { const c = $cmpv(a[i], b[i]); if (c !== 0) return c; }
+    return a.length < b.length ? -1 : a.length > b.length ? 1 : 0;
+  }
+  const ok = (typeof a === 'number' && typeof b === 'number') || (typeof a === 'string' && typeof b === 'string');
+  if (!ok) { if ($eq(a, b)) return 0; throw new TypeError('比较失败：<' + $type(a) + '> 与 <' + $type(b) + '> 不可比较'); }
+  return a < b ? -1 : a > b ? 1 : 0;
+};
+const $sorted = (x, key, rev) => {
+  const a = $arr(x).slice();
+  a.sort(key ? (p, q) => $cmpv(key(p), key(q)) : $cmpv);
+  if (rev) a.reverse();
+  return a;
+};
+const $sortInplace = (x, key, rev) => {
+  x.sort(key ? (p, q) => $cmpv(key(p), key(q)) : $cmpv);
+  if (rev) x.reverse();
+};
+const $minmax = (xs, isMin, key) => {
+  const arr = xs.length === 1 ? $arr(xs[0]) : xs;
+  if (!arr.length) throw new Error('ValueError: 序列为空');
+  let best = arr[0];
+  for (const v of arr) { const c = key ? $cmpv(key(v), key(best)) : $cmpv(v, best); if (isMin ? c < 0 : c > 0) best = v; }
+  return best;
+};
+const $sum = (x, start) => $arr(x).reduce((s, v) => s + v, start === undefined ? 0 : start);
+const $int = (x, base) => {
+  if (base !== undefined && typeof x === 'string') return parseInt(x, base);
+  if (typeof x === 'boolean') return x ? 1 : 0;
+  if (typeof x === 'number') { if (Number.isNaN(x)) throw new Error('ValueError: int() 参数无效'); return Math.trunc(x); }
+  if (typeof x === 'string') { const t = x.trim(); if (!/^[+-]?\d+$/.test(t)) throw new Error("ValueError: invalid literal for int() with base 10: '" + x + "'"); return parseInt(t, 10); }
+  throw new TypeError('int() 参数类型不支持');
+};
+const $float = (x) => {
+  if (typeof x === 'boolean') return x ? 1 : 0;
+  if (typeof x === 'number') return x;
+  if (typeof x === 'string') { const v = parseFloat(x.trim()); if (Number.isNaN(v)) throw new Error("ValueError: float('" + x + "') 无效"); return v; }
+  throw new TypeError('float() 参数类型不支持');
+};
+const $round = (x, n) => {
+  if (n !== undefined && n !== 0) {
+    const f = Math.pow(10, n), v = x * f;
+    let r = $round(v);
+    if (Math.abs(v - r) === 0.5) r = r % 2 === 0 ? r : r + (r > 0 ? -1 : 1);
+    return r / f;
+  }
+  const fl = Math.floor(x), d = x - fl;
+  if (d > 0.5) return fl + 1;
+  if (d < 0.5) return fl;
+  return fl % 2 === 0 ? fl : fl + 1;
+};
+const $abs = Math.abs;
+const $ord = (c) => { if (typeof c !== 'string' || c.length !== 1) throw new TypeError('ord() 需要单个字符'); return c.codePointAt(0); };
+const $chr = (n) => String.fromCodePoint(n);
+const $divmod = (a, b) => [$floordiv(a, b), $mod(a, b)];
+const $pow = (a, b, c) => { if ($UO && ((a && a.__ndarray) || (b && b.__ndarray))) return $UO('**', a, b); const p = Math.pow(a, b); return c === undefined ? p : ((p % c) + c) % c; };
+const $list = (x) => x === undefined ? [] : $arr(x);
+const $tuple = (x) => $arr(x);
+const $set = (x) => x === undefined ? new Set() : new Set($arr(x));
+const $dict = (x) => { const o = {}; if (x) for (const kv of $arr(x)) o[kv[0]] = kv[1]; return o; };
+const $map = (f, ...xs) => xs.length === 1 ? $arr(xs[0]).map(f) : $zip(...xs).map(a => f(...a));
+const $filter = (f, x) => $arr(x).filter(f);
+const $any = (x) => $arr(x).some($bool);
+const $all = (x) => $arr(x).every($bool);
+const $reversed = (x) => $arr(x).slice().reverse();
+const $bin = (x) => (x < 0 ? '-0b' + (-x).toString(2) : '0b' + x.toString(2));
+const $hex = (x) => (x < 0 ? '-0x' + (-x).toString(16) : '0x' + x.toString(16));
+const $oct = (x) => (x < 0 ? '-0o' + (-x).toString(8) : '0o' + x.toString(8));
+const $in = (x, c) => {
+  if (typeof c === 'string') return c.includes($str(x));
+  if (Array.isArray(c)) return c.some(v => $eq(x, v));
+  if (c instanceof Set) return c.has(x);
+  if (c && typeof c === 'object') return Object.prototype.hasOwnProperty.call(c, x);
+  throw new TypeError('in 的右侧不可成员检测（' + $type(c) + '）');
+};
+const $idx = (seq, i) => {
+  if ($UI && seq && seq.__ndarray) return $UI(seq, i);
+  if (seq && typeof seq === 'object' && !Array.isArray(seq) && !(seq instanceof Set)) {
+    if (!Object.prototype.hasOwnProperty.call(seq, i)) throw $mkexc('KeyError', [i]);
+    return seq[i];
+  }
+  if (seq instanceof Set) throw new TypeError('set 不可索引');
+  const n = seq.length, j = i < 0 ? n + i : i;
+  if (j < 0 || j >= n) throw new Error('IndexError: 索引越界（' + String(i) + '，长度 ' + n + '）');
+  return seq[j];
+};
+const $setidx = (seq, i, v) => {
+  if ($UI && seq && seq.__ndarray) { $UI(seq, i, v); return; }
+  if (typeof seq === 'string') throw new TypeError('字符串不可变，不能按下标赋值');
+  if (seq instanceof Set) throw new TypeError('set 不可索引');
+  if (seq && typeof seq === 'object' && !Array.isArray(seq)) { seq[i] = v; return; }
+  const n = seq.length, j = i < 0 ? n + i : i;
+  if (j < 0 || j >= n) throw new Error('IndexError: 赋值索引越界');
+  seq[j] = v;
+};
+const $slice = (seq, start, end, step) => {
+  if ($UI && seq && seq.__ndarray) return $UI(seq, { __pyslice: true, start: start, end: end, step: step });
+  const isStr = typeof seq === 'string';
+  if (seq instanceof Set) throw new TypeError('set 不可切片');
+  const n = seq.length;
+  step = step === undefined ? 1 : step;
+  if (step === 0) throw new Error('ValueError: 切片步长不能为 0');
+  const s = start === undefined ? (step > 0 ? 0 : n - 1) : (start < 0 ? Math.max(n + start, step > 0 ? 0 : -1) : Math.min(start, step > 0 ? n : n - 1));
+  const e = end === undefined ? (step > 0 ? n : -1) : (end < 0 ? Math.max(n + end, step > 0 ? 0 : -1) : Math.min(end, step > 0 ? n : n - 1));
+  const out = [];
+  if (step > 0) for (let i = Math.max(s, 0); i < e; i += step) out.push(seq[i]);
+  else for (let i = Math.min(s, n - 1); i > e; i += step) out.push(seq[i]);
+  return isStr ? out.join('') : out;
+};
+const $print = (items, sep, end) => { $OUT.push(items.map($str).join(sep === undefined ? ' ' : sep) + (end === undefined ? '\n' : end)); };
+const $assert = (x, msg) => { if (!$bool(x)) throw new Error('AssertionError' + (msg !== undefined ? ': ' + $str(msg) : '')); };
+const $dget = (d, k, def) => Object.prototype.hasOwnProperty.call(d, k) ? d[k] : (def === undefined ? null : def);
+const $dpop = (d, k, def) => { if (Object.prototype.hasOwnProperty.call(d, k)) { const v = d[k]; delete d[k]; return v; } if (def !== undefined) return def; throw $mkexc('KeyError', [k]); };
+const $dupdate = (d, o) => {
+  if (o && typeof o === 'object' && !Array.isArray(o) && !(o instanceof Set)) Object.assign(d, o);
+  else for (const kv of $arr(o)) d[kv[0]] = kv[1];
+  return d;
+};
+const $dsetdef = (d, k, def) => { if (!Object.prototype.hasOwnProperty.call(d, k)) d[k] = def === undefined ? null : def; return d[k]; };
+const $clear = (x) => { if (Array.isArray(x)) x.length = 0; else if (x instanceof Set) x.clear(); else if (x && typeof x === 'object') for (const k of Object.keys(x)) delete x[k]; };
+const $copy = (x) => (x && x.__ndarray) ? x.copy() : Array.isArray(x) ? x.slice() : (x instanceof Set ? new Set(x) : Object.assign({}, x));
+const $extend = (l, x) => { for (const v of $iter(x)) l.push(v); return l; };
+const $insert = (l, i, v) => { l.splice(i < 0 ? Math.max(0, l.length + i) : i, 0, v); return l; };
+const $pop = (x, a, def) => { if (x && typeof x === 'object' && !Array.isArray(x) && !(x instanceof Set)) return $dpop(x, a, def); return $popAt(x, a); };
+const $range = (a, b, st) => { let start = 0, stop = a, step = 1; if (b !== undefined) { start = a; stop = b; } if (st !== undefined) step = st; if (step === 0) throw new Error('ValueError: range() arg 3 must not be zero'); const out = []; if (step > 0) for (let x = start; x < stop; x += step) out.push(x); else for (let x = start; x > stop; x += step) out.push(x); return out; };
+const $popAt = (l, i) => {
+  if (i === undefined) { if (!l.length) throw new Error('IndexError: pop 空列表'); return l.pop(); }
+  const n = l.length, j = i < 0 ? n + i : i;
+  if (j < 0 || j >= n) throw new Error('IndexError: pop 索引越界');
+  return l.splice(j, 1)[0];
+};
+const $remove = (l, v) => { const i = l.findIndex(x => $eq(x, v)); if (i < 0) throw new Error('ValueError: 元素不存在'); l.splice(i, 1); return l; };
+const $index = (l, v) => { const i = l.findIndex(x => $eq(x, v)); if (i < 0) throw new Error('ValueError: 元素不存在'); return i; };
+const $count = (l, v) => (typeof l === 'string' ? (v === '' ? l.length + 1 : l.split(v).length - 1) : l.filter(x => $eq(x, v)).length);
+const $find = (s, v) => s.indexOf($str(v));
+const $rfind = (s, v) => s.lastIndexOf($str(v));
+const $strip = (s, ch) => { if (ch === undefined) return s.trim(); let a = 0, b = s.length; while (a < b && ch.includes(s[a])) a++; while (b > a && ch.includes(s[b - 1])) b--; return s.slice(a, b); };
+const $lstrip = (s, ch) => { if (ch === undefined) return s.replace(/^\s+/, ''); let a = 0; while (a < s.length && ch.includes(s[a])) a++; return s.slice(a); };
+const $rstrip = (s, ch) => { if (ch === undefined) return s.replace(/\s+$/, ''); let b = s.length; while (b > 0 && ch.includes(s[b - 1])) b--; return s.slice(0, b); };
+const $wsplit = (s) => s.trim().length ? s.trim().split(/\s+/) : [];
+const $join = (it, sep) => $arr($iter(it)).map($str).join(sep);
+const $replace = (s, a, b) => s.split(a).join($str(b));
+const $title = (s) => s.replace(/[A-Za-z]+['’]?[A-Za-z]*/g, w => w[0].toUpperCase() + w.slice(1).toLowerCase());
+const $capitalize = (s) => s ? s[0].toUpperCase() + s.slice(1).toLowerCase() : s;
+const $zfill = (s, w) => s.padStart(w, '0');
+const $center = (s, w, fill) => { fill = fill === undefined ? ' ' : fill; const pad = w - s.length; if (pad <= 0) return s; const l = Math.floor(pad / 2); return fill.repeat(l) + s + fill.repeat(pad - l); };
+const $isdigit = (s) => s.length > 0 && /^[0-9]+$/.test(s);
+const $isalpha = (s) => s.length > 0 && /^[A-Za-z]+$/.test(s);
+const $isalnum = (s) => s.length > 0 && /^[0-9A-Za-z]+$/.test(s);
+const $isspace = (s) => s.length > 0 && /^\s+$/.test(s);
+const $islower = (s) => /[a-z]/.test(s) && !/[A-Z]/.test(s);
+const $isupper = (s) => /[A-Z]/.test(s) && !/[a-z]/.test(s);
+const $startswith = (s, p) => s.startsWith(p);
+const $endswith = (s, p) => s.endsWith(p);
+const $union = (a, b) => new Set([...a, ...$arr(b)]);
+const $intersection = (a, b) => new Set([...a].filter(v => b.has(v)));
+const $difference = (a, b) => new Set([...a].filter(v => !b.has(v)));
+const $sremove = (s, v) => { if (!s.delete(v)) throw new Error('KeyError: ' + $repr(v)); return s; };
+const $ga = (o, k) => {
+  if (o === null || o === undefined) throw new Error("AttributeError: '" + $type(o) + "' 对象没有属性 '" + k + "'");
+  if (typeof o === 'object' && o.__cls) {
+    if (k in o) return o[k];
+    let c = o.__cls;
+    while (c) { const t = $CLS[c]; if (t && t.__attrs && k in t.__attrs) return t.__attrs[k]; c = t && t.__base; }
+    throw new Error("AttributeError: '" + o.__cls + "' 对象没有属性 '" + k + "'");
+  }
+  return o[k];
+};
+const $truediv = (a, b) => { if ($UO && ((a && a.__ndarray) || (b && b.__ndarray))) return $UO('/', a, b); if (b === 0) throw new Error('ZeroDivisionError: division by zero'); return a / b; };
+const $sub = (a, b) => { if ($UO && ((a && a.__ndarray) || (b && b.__ndarray))) return $UO('-', a, b); if ($isnum(a) && $isnum(b)) return $booln(a) - $booln(b); if (a instanceof Set && b instanceof Set) { const r = new Set(a); for (const v of b) r.delete(v); return r; } throw new TypeError('不支持的 - 操作数类型（' + $type(a) + ' - ' + $type(b) + '）'); };
+const $band = (a, b) => { if ($isnum(a) && $isnum(b)) return $booln(a) & $booln(b); if (a instanceof Set && b instanceof Set) { const r = new Set(); for (const v of a) if (b.has(v)) r.add(v); return r; } throw new TypeError('不支持的 & 操作数类型'); };
+const $bor = (a, b) => { if ($isnum(a) && $isnum(b)) return $booln(a) | $booln(b); if (a instanceof Set && b instanceof Set) { const r = new Set(a); for (const v of b) r.add(v); return r; } throw new TypeError('不支持的 | 操作数类型'); };
+const $bxor = (a, b) => { if ($isnum(a) && $isnum(b)) return $booln(a) ^ $booln(b); if (a instanceof Set && b instanceof Set) { const r = new Set(a); for (const v of b) { if (r.has(v)) r.delete(v); else r.add(v); } return r; } throw new TypeError('不支持的 ^ 操作数类型'); };
+const $delit = (o, i) => { if (Array.isArray(o)) { const n = o.length, j = i < 0 ? n + i : i; if (j < 0 || j >= n) throw new Error('IndexError: del 索引越界'); o.splice(j, 1); } else delete o[i]; };
+const $mkexc = (ty, args) => ({ __pyexc: true, type: ty, msg: args && args.length ? $str(args[0]) : '', args: args || [] });
+const $pyerr = (e) => {
+  if (e && e.__pyexc) return e;
+  const m = e instanceof Error ? e.message : String(e);
+  const pre = m.split(':')[0].trim();
+  const KNOWN = ['ValueError', 'TypeError', 'KeyError', 'IndexError', 'ZeroDivisionError', 'NameError', 'AttributeError', 'AssertionError', 'RuntimeError', 'StopIteration', 'OverflowError', 'RecursionError'];
+  return { __pyexc: true, type: KNOWN.includes(pre) ? pre : 'Exception', msg: KNOWN.includes(pre) ? m.slice(m.indexOf(':') + 1).trim() : m };
+};
+const $fmt = (v, spec) => {
+  let s = spec, fill = ' ', align = '', zfill = false, width = 0, comma = false, prec = -1, ty = '';
+  const last = s.slice(-1);
+  if (/^[bdoxXfeEgGns%]$/.test(last)) { ty = last; s = s.slice(0, -1); }
+  let m = /\.(\d+)$/.exec(s);
+  if (m) { prec = +m[1]; s = s.slice(0, m.index); }
+  if (s.endsWith(',')) { comma = true; s = s.slice(0, -1); }
+  m = /^([\s\S]?)([<>^])/.exec(s);
+  if (m) { if (m[1]) fill = m[1]; align = m[2]; s = s.slice(m[0].length); }
+  m = /^0(\d+)$/.exec(s);
+  if (m) { zfill = true; width = +m[1]; s = ''; }
+  else { m = /^(\d+)$/.exec(s); if (m) { width = +m[1]; s = ''; } }
+  if (s.length) throw new Error("ValueError: 不支持的格式说明符 '" + spec + "'");
+  let out;
+  const num = Number(v);
+  if (ty === 'f') out = num.toFixed(prec < 0 ? 6 : prec);
+  else if (ty === 'd') out = String(Math.trunc(num));
+  else if (ty === 'e') out = num.toExponential(prec < 0 ? 6 : prec);
+  else if (ty === 'g') out = String(+num.toPrecision(prec < 0 ? 6 : prec));
+  else if (ty === 's') out = $str(v);
+  else if (ty === 'x') out = (num < 0 ? '-' : '') + Math.abs(Math.trunc(num)).toString(16);
+  else if (ty === 'X') out = ((num < 0 ? '-' : '') + Math.abs(Math.trunc(num)).toString(16)).toUpperCase();
+  else if (ty === 'o') out = (num < 0 ? '-' : '') + Math.abs(Math.trunc(num)).toString(8);
+  else if (ty === 'b') out = (num < 0 ? '-' : '') + Math.abs(Math.trunc(num)).toString(2);
+  else if (ty === '%') out = (num * 100).toFixed(prec < 0 ? 6 : prec) + '%';
+  else if (ty === 'n') out = String(v);
+  else if (typeof v === 'number') out = Number.isInteger(v) ? String(v) : (prec < 0 ? String(v) : v.toFixed(prec));
+  else out = $str(v);
+  if (prec >= 0 && (ty === '' || ty === 's') && typeof v === 'string') out = out.slice(0, prec);
+  if (comma && typeof v === 'number') { const pp = out.indexOf('.'); const ip = pp < 0 ? out : out.slice(0, pp); const dp = pp < 0 ? '' : out.slice(pp); out = ip.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + dp; }
+  if (width && out.length < width) {
+    const neg = out[0] === '-' || out[0] === '+';
+    const sg = neg ? out[0] : '';
+    const body = neg ? out.slice(1) : out;
+    if (zfill && !align) out = sg + body.padStart(width - (neg ? 1 : 0), '0');
+    else {
+      align = align || (typeof v === 'number' ? '>' : '<');
+      const pad = width - body.length;
+      if (align === '<') out = body + fill.repeat(pad);
+      else if (align === '>') out = fill.repeat(pad) + body;
+      else { const l = Math.floor(pad / 2); out = fill.repeat(l) + body + fill.repeat(pad - l); }
+      if (neg && align !== '>') out = sg + out;
+    }
+  }
+  return out;
+};
+const $SIGS = {};
+const $kw = (f, name, pos, kw) => {
+  const sig = $SIGS[name];
+  if (!sig) return f(...pos, ...Object.values(kw));
+  const ps = sig[0], kwn = sig[1];
+  const args = pos.slice();
+  const rest = {};
+  for (const k in kw) {
+    const i = ps.indexOf(k);
+    if (i < 0) {
+      if (!kwn) throw new Error("TypeError: " + name + "() got an unexpected keyword argument '" + k + "'");
+      rest[k] = kw[k];
+      continue;
+    }
+    if (i < pos.length) throw new Error('TypeError: ' + name + "() got multiple values for argument '" + k + "'");
+    args[i] = kw[k];
+  }
+  if (kwn) args[ps.length] = rest;
+  return f(...args);
+};
+const $CLS = {};
+const $M = (o, m, args) => {
+  let c = o && o.__cls;
+  while (c) { const t = $CLS[c]; if (t && t[m]) return t[m](o, ...args); c = t && t.__base; }
+  throw new Error("AttributeError: '" + $type(o) + "' 对象没有方法 '" + m + "'");
+};
+const $M2 = (cls, o, m, args) => {
+  const t = $CLS[cls];
+  if (t && t[m]) return t[m](o, ...args);
+  throw new Error("AttributeError: '" + cls + "' 没有方法 '" + m + "'");
+};
+const $NEW = (cls, args) => {
+  const t = $CLS[cls];
+  if (!t) throw new Error("NameError: name '" + cls + "' is not defined");
+  const o = { __cls: cls };
+  let c = cls;
+  while (c) { const ct = $CLS[c]; if (ct && ct.__attrs) Object.assign(o, ct.__attrs); c = ct && ct.__base; }
+  let ic = cls;
+  while (ic) { const ct = $CLS[ic]; if (ct && ct.__init__) { ct.__init__(o, ...args); break; } ic = ct && ct.__base; }
+  return o;
+};
+const $isinst = (o, c) => { let cur = o && o.__cls; while (cur) { if (cur === c) return true; cur = $CLS[cur] && $CLS[cur].__base; } return false; };
+const $next2 = (g) => { if (g && typeof g.next === 'function') { const r = g.next(); if (r.done) throw new Error('StopIteration'); return r.value; } throw new TypeError('对象不可 next()'); };
+// ---- numpy 等模块钩子（模块 prelude 运行时赋值；未加载时保持 null，零开销） ----
+let $UO = null, $UC = null, $UEQ = null, $UI = null, $UR = null, $UN = null;
+const $MODULES = {};
+const $use = (name) => { if (!Object.prototype.hasOwnProperty.call($MODULES, name)) throw new Error("ModuleNotFoundError: No module named '" + name + "'（当前环境仅支持 numpy，import 请写在文件顶部）"); return $MODULES[name]; };
+const $MOBJ = (o, m, args, kw) => {
+  if (o && typeof o === 'object' && !o.__cls && !o.__pyexc && typeof o[m] === 'function') {
+    return kw && Object.keys(kw).length ? o[m](...args, kw) : o[m](...args);
+  }
+  return $M(o, m, args);
+};
+const $ndq = (a, b) => (a && a.__ndarray) || (b && b.__ndarray);
+const $lt = (a, b) => $UC && $ndq(a, b) ? $UC('<', a, b) : a < b;
+const $gt = (a, b) => $UC && $ndq(a, b) ? $UC('>', a, b) : a > b;
+const $le = (a, b) => $UC && $ndq(a, b) ? $UC('<=', a, b) : a <= b;
+const $ge = (a, b) => $UC && $ndq(a, b) ? $UC('>=', a, b) : a >= b;
+const $ne = (a, b) => $UEQ && $ndq(a, b) ? $UEQ(a, b, true) : !$eq(a, b);
+const $neg = (a) => $UN && a && a.__ndarray ? $UN(a) : -a;
+const $matmul = (a, b) => { if ($UO && $ndq(a, b)) return $UO('@', a, b); throw new Error('TypeError: @ 矩阵乘仅支持 numpy 数组'); };
+  try { $int.__pytype = 'int'; $float.__pytype = 'float'; $bool.__pytype = 'bool'; } catch (e) {}
+  const $numpyHook = (h) => { if (h) { $UO = h.UO || null; $UC = h.UC || null; $UEQ = h.UEQ || null; $UI = h.UI || null; $UR = h.UR || null; $UN = h.UN || null; } };
+  if (typeof $npmod !== 'undefined' && $npmod) {
+    $MODULES.numpy = $npmod.np !== undefined ? $npmod.np : $npmod;
+    if ($npmod.__hooks) $numpyHook($npmod.__hooks);
+  }
+`;
+
+// ---------------- 工具 ----------------
+function unescapePy(s: string): string {
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c !== '\\' || i + 1 >= s.length) { out += c; continue; }
+    const n = s[i + 1]; i++;
+    switch (n) {
+      case 'n': out += '\n'; break;
+      case 't': out += '\t'; break;
+      case 'r': out += '\r'; break;
+      case '\\': out += '\\'; break;
+      case "'": out += "'"; break;
+      case '"': out += '"'; break;
+      case 'a': out += '\x07'; break;
+      case 'b': out += '\b'; break;
+      case 'f': out += '\f'; break;
+      case 'v': out += '\v'; break;
+      case '0': out += '\0'; break;
+      case 'x': { const h = s.slice(i + 1, i + 3); if (/^[0-9a-fA-F]{2}$/.test(h)) { out += String.fromCharCode(parseInt(h, 16)); i += 2; } else out += '\\x'; break; }
+      case 'u': { const h = s.slice(i + 1, i + 5); if (/^[0-9a-fA-F]{4}$/.test(h)) { out += String.fromCharCode(parseInt(h, 16)); i += 4; } else out += '\\u'; break; }
+      default: out += '\\' + n; break; // Python：未知转义保留反斜杠
+    }
+  }
+  return out;
+}
+
+const JS_RESERVED = new Set(['let', 'var', 'const', 'function', 'class', 'new', 'typeof', 'instanceof', 'delete',
+  'void', 'case', 'switch', 'default', 'do', 'throw', 'catch', 'this', 'super', 'extends', 'export', 'enum',
+  'implements', 'interface', 'package', 'private', 'protected', 'public', 'static', 'arguments', 'eval',
+  'null', 'undefined', 'NaN', 'Infinity']);
+const ident = (n: string) => JS_RESERVED.has(n) ? n + '_' : n;
+
+// ---------------- Lexer ----------------
+interface Tok { t: string; v: string; line: number }
+
+const PY_KW = new Set(['if', 'elif', 'else', 'while', 'for', 'in', 'def', 'return', 'break', 'continue', 'pass',
+  'and', 'or', 'not', 'is', 'lambda', 'True', 'False', 'None', 'import', 'from', 'class', 'try', 'except',
+  'finally', 'with', 'as', 'global', 'nonlocal', 'del', 'assert', 'raise', 'yield', 'async', 'await']);
+
+function lex(src: string, errs: Py2JsError[]): Tok[] {
+  const toks: Tok[] = [];
+  const indents: number[] = [0];
+  let i = 0, line = 1, depth = 0, atLineStart = true;
+  const push = (t: string, v: string, ln = line) => toks.push({ t, v, line: ln });
+  const len = src.length;
+
+  const scanString = (prefix: string, q: string) => {
+    const isRaw = prefix.toLowerCase().includes('r');
+    const isF = prefix.toLowerCase().includes('f');
+    if (prefix.toLowerCase().includes('b')) errs.push({ line, msg: 'bytes 字符串不支持' });
+    let content = '', closed = false;
+    i += q.length;
+    while (i < len) {
+      const ch = src[i];
+      if (ch === '\\' && i + 1 < len) {
+        if (isRaw) { content += ch + src[i + 1]; i += 2; continue; }
+        content += ch + src[i + 1]; i += 2; continue; // 保留原文，非 raw 在下方解码
+      }
+      if (src.startsWith(q, i)) { i += q.length; closed = true; break; }
+      if (ch === '\n') {
+        if (q.length === 1) break; // 单引号不可跨行
+        line++; content += ch; i++; continue;
+      }
+      content += ch; i++;
+    }
+    if (!closed) { errs.push({ line, msg: '字符串未闭合' }); return; }
+    if (isF) push('fstr', content);
+    else if (isRaw) push('str', '\x00RAW\x00' + content);
+    else push('str', unescapePy(content));
+  };
+
+  while (i < len) {
+    if (atLineStart && depth === 0) {
+      let w = 0;
+      while (i < len && (src[i] === ' ' || src[i] === '\t')) { w += src[i] === '\t' ? 4 - (w % 4) : 1; i++; }
+      if (i >= len) break;
+      if (src[i] === '\n' || src[i] === '#') { // 空行 / 纯注释行
+        while (i < len && src[i] !== '\n') i++;
+        if (i < len) { i++; line++; }
+        continue;
+      }
+      const cur = indents[indents.length - 1];
+      if (w > cur) { indents.push(w); push('indent', ''); }
+      else if (w < cur) {
+        while (indents.length > 1 && w < indents[indents.length - 1]) { indents.pop(); push('dedent', ''); }
+        if (w !== indents[indents.length - 1]) errs.push({ line, msg: '缩进不一致' });
+      }
+      atLineStart = false;
+      continue;
+    }
+    const c = src[i];
+    if (c === '\n') { line++; i++; if (depth === 0) { push('nl', ''); atLineStart = true; } continue; }
+    if (c === ' ' || c === '\t') { i++; continue; }
+    if (c === '#') { while (i < len && src[i] !== '\n') i++; continue; }
+    if (c === '\\' && src[i + 1] === '\n') { i += 2; line++; continue; } // 续行符
+    // 字符串（含前缀）
+    if (c === '"' || c === "'") { scanString('', c); continue; }
+    if (/[A-Za-z_]/.test(c)) {
+      const m = /^([fFrRbBuU]{1,2})("""|'''|"|')/.exec(src.slice(i));
+      if (m && !/[\w]/.test(src[i - 1] || '')) { i += m[1].length; scanString(m[1], m[2]); continue; }
+      let k = i;
+      while (k < len && /[\w]/.test(src[k])) k++;
+      const w = src.slice(i, k);
+      i = k;
+      push(PY_KW.has(w) ? 'kw' : 'name', w);
+      continue;
+    }
+    if (/[0-9]/.test(c) || (c === '.' && /[0-9]/.test(src[i + 1] || ''))) {
+      let k = i;
+      if (c === '0' && /[xXbBoO]/.test(src[i + 1] || '')) {
+        k = i + 2;
+        while (k < len && /[0-9a-fA-F_]/.test(src[k])) k++;
+        push('num', src.slice(i, k).replace(/_/g, '')); i = k; continue;
+      }
+      while (k < len && /[0-9_]/.test(src[k])) k++;
+      if (k < len && src[k] === '.' && /[0-9]/.test(src[k + 1] || '')) { k++; while (k < len && /[0-9_]/.test(src[k])) k++; }
+      if (k < len && /[eE]/.test(src[k]) && /[0-9+\-]/.test(src[k + 1] || '')) { k += 2; while (k < len && /[0-9_]/.test(src[k])) k++; }
+      if (k < len && src[k] === 'j') { errs.push({ line, msg: '复数不支持' }); k++; }
+      push('num', src.slice(i, k).replace(/_/g, '')); i = k; continue;
+    }
+    const three = src.slice(i, i + 3);
+    const two = src.slice(i, i + 2);
+    if (three === '**=' || three === '//=' || three === '>>=' || three === '<<=') { push('op', three); i += 3; continue; }
+    if (two === ':=') { push('op', ':='); i += 2; continue; }
+    if (['**', '//', '<<', '>>', '<=', '>=', '==', '!=', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '->'].includes(two)) {
+      if (two === '->') { i += 2; continue; } // 返回注解，忽略
+      push('op', two); i += 2; continue;
+    }
+    if ('+-*/%()[]{},:.<>=&|^~;'.includes(c)) {
+      if (c === '(' || c === '[' || c === '{') depth++;
+      else if (c === ')' || c === ']' || c === '}') depth = Math.max(0, depth - 1);
+      push('op', c); i++; continue;
+    }
+    if (c === '@') { push('op', '@'); i++; continue; } // @ 仅用于 numpy 矩阵乘
+    errs.push({ line, msg: '无法识别的字符 ' + JSON.stringify(c) });
+    i++;
+  }
+  while (indents.length > 1) { indents.pop(); push('dedent', '', line); }
+  push('eof', '', line);
+  return toks;
+}
+
+// ---------------- Parser ----------------
+class ParseBreak extends Error {}
+
+type Node = any;
+interface KV { k: string; v: Node }
+
+function createParser(toks: Tok[], errs: Py2JsError[]) {
+  let pos = 0;
+  let uid = 0;
+  const peek = (k = 0): Tok => toks[pos + k] || toks[toks.length - 1];
+  const next = (): Tok => toks[pos++];
+  const at = (v: string) => { const t = peek(); return t.v === v || (v === 'nl' && t.t === 'nl'); };
+  const eat = (v: string) => { if (at(v)) { pos++; return true; } return false; };
+  const expect = (v: string) => {
+    if (!eat(v)) {
+      const t = peek();
+      errs.push({ line: t.line, msg: `语法错误：期望 '${v}'，实际是 '${t.t === 'eof' ? '结尾' : t.v || t.t}'` });
+      throw new ParseBreak();
+    }
+  };
+  const atKw = (v: string) => peek().t === 'kw' && peek().v === v;
+  const eatKw = (v: string) => { if (atKw(v)) { pos++; return true; } return false; };
+  const expectName = (): string => {
+    const t = peek();
+    if (t.t !== 'name') { errs.push({ line: t.line, msg: '期望标识符' }); throw new ParseBreak(); }
+    pos++; return t.v;
+  };
+  const skipNl = () => { while (peek().t === 'nl') pos++; };
+  const syncLine = () => { while (peek().t !== 'nl' && peek().t !== 'eof' && peek().t !== 'dedent') pos++; if (peek().t === 'nl') pos++; };
+
+  // ---- 语句 ----
+  function program(): Node[] {
+    const body: Node[] = [];
+    skipNl();
+    while (peek().t !== 'eof') {
+      if (peek().t === 'nl' || peek().t === 'dedent') { pos++; continue; }
+      try { body.push(...statement()); } catch (e) { if (e instanceof ParseBreak) { syncLine(); continue; } throw e; }
+    }
+    return body;
+  }
+
+  function statement(): Node[] {
+    if (atKw('if')) return [parseIf()];
+    if (atKw('while')) return [parseWhile()];
+    if (atKw('for')) return [parseFor()];
+    if (atKw('def')) return [parseDef()];
+    if (atKw('try')) return [parseTry()];
+    if (atKw('class')) return [parseClass()];
+    return parseLine();
+  }
+
+  function parseLine(): Node[] {
+    const out: Node[] = [simpleStmt()];
+    while (eat(';')) {
+      if (peek().t === 'nl' || peek().t === 'eof' || peek().t === 'dedent' || at(';')) break;
+      out.push(simpleStmt());
+    }
+    if (peek().t === 'nl') pos++;
+    return out;
+  }
+
+  function suite(): Node[] {
+    if (peek().t === 'nl') {
+      skipNl();
+      if (peek().t !== 'indent') { errs.push({ line: peek().line, msg: '缺少缩进块' }); throw new ParseBreak(); }
+      pos++;
+      const body: Node[] = [];
+      while (peek().t !== 'dedent' && peek().t !== 'eof') {
+        if (peek().t === 'nl') { pos++; continue; }
+        try { body.push(...statement()); } catch (e) {
+          if (e instanceof ParseBreak) {
+            // 跳到块内下一行
+            while (peek().t !== 'nl' && peek().t !== 'eof' && peek().t !== 'dedent') pos++;
+            continue;
+          }
+          throw e;
+        }
+      }
+      if (peek().t === 'dedent') pos++;
+      return body;
+    }
+    return parseLine(); // if x: stmt 单行
+  }
+
+  function parseIf(): Node {
+    pos++; // if / elif
+    const test = expr();
+    expect(':');
+    const body = suite();
+    let orelse: Node[] = [];
+    if (atKw('elif')) orelse = [parseIf()];
+    else if (eatKw('else')) { expect(':'); orelse = suite(); }
+    return { type: 'if', test, body, orelse };
+  }
+
+  function parseWhile(): Node {
+    pos++;
+    const test = expr();
+    expect(':');
+    const body = suite();
+    if (eatKw('else')) { expect(':'); return { type: 'while', test, body, orelse: suite() }; }
+    return { type: 'while', test, body, orelse: [] };
+  }
+
+  // 专用目标解析：不进入表达式比较层（避免把 `i in range(...)` 当成比较链）
+  function parseTarget(): Node {
+    const first = parseTargetAtom();
+    if (at(',')) {
+      const items = [first];
+      while (eat(',')) {
+        if (atKw('in') || peek().t === 'nl' || peek().t === 'eof' || peek().t === 'dedent') break;
+        items.push(parseTargetAtom());
+      }
+      return { type: 'tuple', items };
+    }
+    return first;
+  }
+
+  function parseTargetAtom(): Node {
+    const t = peek();
+    if (t.t === 'name') { pos++; return { type: 'name', id: t.v, line: t.line }; }
+    if (eat('*')) return parseTargetAtom(); // 星号目标宽松接受
+    if (t.t === 'op' && t.v === '(') {
+      pos++;
+      if (eat(')')) return { type: 'tuple', items: [] };
+      const first = parseTargetAtom();
+      if (at(',')) {
+        const items = [first];
+        while (eat(',')) { if (at(')')) break; items.push(parseTargetAtom()); }
+        expect(')');
+        return { type: 'tuple', items };
+      }
+      expect(')');
+      return first;
+    }
+    if (t.t === 'op' && t.v === '[') {
+      pos++;
+      const items: Node[] = [];
+      if (!eat(']')) {
+        while (true) {
+          items.push(parseTargetAtom());
+          if (eat(',')) { if (eat(']')) break; continue; }
+          expect(']');
+          break;
+        }
+      }
+      return { type: 'tuple', items };
+    }
+    errs.push({ line: t.line, msg: '循环/解包目标只能是变量名（或元组解包）' });
+    throw new ParseBreak();
+  }
+
+  function parseFor(): Node {
+    pos++;
+    const target = parseTarget();
+    if (!eatKw('in')) { errs.push({ line: peek().line, msg: "期望 'in'" }); throw new ParseBreak(); }
+    const iter = expr();
+    expect(':');
+    const body = suite();
+    if (eatKw('else')) { expect(':'); return { type: 'for', target, iter, body, orelse: suite() }; }
+    return { type: 'for', target, iter, body, orelse: [] };
+  }
+
+  function parseDef(): Node {
+    pos++;
+    const name = expectName();
+    expect('(');
+    const params: { name: string; def: Node | null }[] = [];
+    let star: string | null = null;
+    let kwarg: string | null = null;
+    let seenDef = false;
+    if (!eat(')')) {
+      while (true) {
+        if (eat('*')) { star = expectName(); if (!eat(',') ) { expect(')'); break; } continue; }
+        if (eat('**')) {
+          if (star) { errs.push({ line: peek().line, msg: '暂不支持 *args 与 **kwargs 同时使用' }); throw new ParseBreak(); }
+          kwarg = expectName(); expect(')'); break;
+        }
+        const pn = expectName();
+        let pd: Node | null = null;
+        if (eat('=')) { pd = expr(); seenDef = true; }
+        else if (seenDef) { errs.push({ line: peek().line, msg: '非默认参数不能跟在默认参数后' }); throw new ParseBreak(); }
+        params.push({ name: pn, def: pd });
+        if (eat(',')) { if (eat(')')) break; continue; }
+        expect(')');
+        break;
+      }
+    }
+    if (star && params.some(p => p.def)) { /* *args 后默认参数按 py 规则合法，宽松放行 */ }
+    expect(':');
+    const body = suite();
+    return { type: 'def', name, params, star, kwarg, body };
+  }
+
+  function parseTry(): Node {
+    pos++; // try
+    expect(':');
+    const body = suite();
+    const handlers: { types: string[] | null; name: string | null; body: Node[] }[] = [];
+    let orelse: Node[] = [];
+    let finalbody: Node[] = [];
+    while (true) {
+      if (atKw('except')) {
+        pos++;
+        let types: string[] | null = null;
+        let name: string | null = null;
+        if (!at(':')) {
+          const one = (): string => {
+            const t = peek();
+            if (t.t !== 'name') { errs.push({ line: t.line, msg: 'except 期望异常类名' }); throw new ParseBreak(); }
+            pos++; return t.v;
+          };
+          if (eat('(')) {
+            types = [one()];
+            while (eat(',')) { if (eat(')')) break; types.push(one()); }
+            expect(')');
+          } else types = [one()];
+          if (eatKw('as')) name = expectName();
+        }
+        expect(':');
+        handlers.push({ types, name, body: suite() });
+        continue;
+      }
+      if (atKw('else') && handlers.length && !finalbody.length) { pos++; expect(':'); orelse = suite(); continue; }
+      if (atKw('finally')) { pos++; expect(':'); finalbody = suite(); break; }
+      break;
+    }
+    if (!handlers.length && !finalbody.length) { errs.push({ line: peek().line, msg: 'try 块至少需要一个 except 或 finally' }); throw new ParseBreak(); }
+    return { type: 'try', body, handlers, orelse, finalbody };
+  }
+
+  function parseClass(): Node {
+    pos++;
+    const name = expectName();
+    let base: string | null = null;
+    if (eat('(')) {
+      const t = peek();
+      if (t.t !== 'name') { errs.push({ line: t.line, msg: 'class 基类只能是类名' }); throw new ParseBreak(); }
+      pos++; base = t.v;
+      eat(',');
+      expect(')');
+    }
+    expect(':');
+    const body = suite();
+    for (const st of body) {
+      const ok = st.type === 'def' || st.type === 'pass'
+        || (st.type === 'assign' && st.targets.length === 1 && st.targets[0].type === 'name')
+        || (st.type === 'expr' && (st.e.type === 'str' || (st.e.type === 'const' && st.e.v === null)));
+      if (!ok) { errs.push({ line: peek().line, msg: 'class 体仅支持方法定义、简单类属性赋值与 pass/docstring' }); throw new ParseBreak(); }
+    }
+    return { type: 'class', name, base, body };
+  }
+
+  function forbidKw(kw: string, alt: string) {
+    errs.push({ line: peek().line, msg: `${kw} 暂不支持${alt ? '（' + alt + '）' : ''}` });
+    throw new ParseBreak();
+  }
+
+  function simpleStmt(): Node {
+    const t = peek();
+    if (t.t === 'kw') {
+      switch (t.v) {
+        case 'return': {
+          pos++;
+          const e = (peek().t === 'nl' || peek().t === 'eof' || peek().t === 'dedent' || at(';')) ? null : exprOrTuple();
+          return { type: 'return', e };
+        }
+        case 'break': pos++; return { type: 'break' };
+        case 'continue': pos++; return { type: 'continue' };
+        case 'pass': pos++; return { type: 'pass' };
+        case 'assert': {
+          pos++;
+          const e = expr();
+          let msg: Node | null = null;
+          if (eat(',')) msg = expr();
+          return { type: 'assert', e, msg };
+        }
+        case 'import': {
+          pos++;
+          const mod = expectName();
+          if (mod !== 'numpy') { errs.push({ line: t.line, msg: `暂不支持 import ${mod}（当前仅支持 import numpy）` }); throw new ParseBreak(); }
+          let asname: string | null = null;
+          if (eat('as')) asname = expectName();
+          return { type: 'import', module: mod, asname, line: t.line };
+        }
+        case 'from': {
+          pos++;
+          const mod = expectName();
+          if (mod !== 'numpy') { errs.push({ line: t.line, msg: `暂不支持 from ${mod} import（当前仅支持 numpy）` }); throw new ParseBreak(); }
+          if (!eatKw('import')) { errs.push({ line: t.line, msg: "期望 'import'" }); throw new ParseBreak(); }
+          const names: { name: string; asname: string | null }[] = [];
+          do {
+            const nm = expectName();
+            let asname: string | null = null;
+            if (eat('as')) asname = expectName();
+            names.push({ name: nm, asname });
+          } while (eat(','));
+          return { type: 'fromimport', module: mod, names, line: t.line };
+        }
+        case 'with': forbidKw('with', '上下文管理器暂不支持');
+        case 'async': case 'await': forbidKw('async/await', '异步暂不支持');
+        case 'raise': {
+          pos++;
+          if (peek().t === 'nl' || peek().t === 'eof' || peek().t === 'dedent' || at(';')) {
+            errs.push({ line: t.line, msg: '单独 raise 暂不支持，请写 raise 异常类(信息)' });
+            throw new ParseBreak();
+          }
+          const e = expr();
+          if (e.type === 'call' && e.fn.type === 'name') return { type: 'raise', cls: e.fn.id, args: e.args, line: t.line };
+          if (e.type === 'name') return { type: 'raise', cls: e.id, args: [], line: t.line };
+          errs.push({ line: t.line, msg: 'raise 仅支持 raise 异常类(信息) 形式' });
+          throw new ParseBreak();
+        }
+        case 'del': {
+          pos++;
+          const tgt = exprOrTuple();
+          const items = tgt.type === 'tuple' ? tgt.items : [tgt];
+          for (const x of items) {
+            if (x.type !== 'name' && x.type !== 'sub') { errs.push({ line: t.line, msg: 'del 目标只能是变量、下标或字典键' }); throw new ParseBreak(); }
+          }
+          return { type: 'del', items, line: t.line };
+        }
+        case 'yield': {
+          pos++;
+          const e = (peek().t === 'nl' || peek().t === 'eof' || peek().t === 'dedent' || at(';')) ? null : exprOrTuple();
+          return { type: 'yield', e, line: t.line };
+        }
+        case 'global': case 'nonlocal': {
+          pos++;
+          const names = [expectName()];
+          while (eat(',')) names.push(expectName());
+          return { type: t.v, names, line: t.line };
+        }
+        case 'lambda': break;
+      }
+    }
+    // 表达式 / 赋值
+    const first = exprOrTuple();
+    if (at('=')) {
+      const targets: Node[] = [first];
+      let value: Node = first;
+      while (eat('=')) {
+        value = exprOrTuple();
+        targets.push(value);
+      }
+      const realTargets = targets.slice(0, -1);
+      value = targets[targets.length - 1];
+      for (const tg of realTargets) {
+        const check = (n: Node): void => {
+          if (n.type === 'name' || n.type === 'sub' || n.type === 'attr' || n.type === 'slice') return;
+          if (n.type === 'tuple') { n.items.forEach(check); return; }
+          errs.push({ line: t.line, msg: '赋值目标不合法' });
+          throw new ParseBreak();
+        };
+        check(tg);
+      }
+      return { type: 'assign', targets: realTargets, value };
+    }
+    const AUG_OPS = ['+=', '-=', '*=', '/=', '%=', '**=', '//=', '&=', '|=', '^=', '<<=', '>>='];
+    if (t.t === 'op' && AUG_OPS.includes(t.v) === false && peek(-0) === t) { /* noop */ }
+    for (const op of AUG_OPS) {
+      // 需要回溯判断：first 后面紧跟 aug op
+      if (at(op)) {
+        pos++;
+        const value = exprOrTuple();
+        const check = (n: Node): boolean => n.type === 'name' || n.type === 'sub' || n.type === 'attr';
+        if (!check(first)) { errs.push({ line: t.line, msg: '增强赋值目标不合法' }); throw new ParseBreak(); }
+        return { type: 'aug', target: first, op: op.slice(0, -1), value };
+      }
+    }
+    return { type: 'expr', e: first };
+  }
+
+  // ---- 表达式 ----
+  function exprOrTuple(): Node {
+    const e = expr();
+    if (at(',')) {
+      const items = [e];
+      while (eat(',')) {
+        if (peek().t === 'nl' || peek().t === 'eof' || peek().t === 'dedent' || at(')') || at(']') || at('}') || at('=') || at(';') || atKw('in') || atKw('if')) break;
+        items.push(expr());
+      }
+      return { type: 'tuple', items };
+    }
+    return e;
+  }
+
+  function expr(): Node {
+    if (atKw('lambda')) return parseLambda();
+    let body = orExpr();
+    if (at(':=')) {
+      if (body.type !== 'name') { errs.push({ line: peek().line, msg: ':= 左侧必须是变量名' }); throw new ParseBreak(); }
+      pos++;
+      const value = expr();
+      body = { type: 'walrus', id: body.id, value, line: peek().line };
+      return body;
+    }
+    if (atKw('if')) {
+      pos++;
+      const test = orExpr();
+      if (!eatKw('else')) { errs.push({ line: peek().line, msg: '三元表达式期望 else' }); throw new ParseBreak(); }
+      const orelse = expr();
+      return { type: 'ifexp', test, body, orelse };
+    }
+    return body;
+  }
+
+  function parseLambda(): Node {
+    pos++;
+    const params: { name: string; def: Node | null }[] = [];
+    if (peek().t === 'name') {
+      while (true) {
+        params.push({ name: expectName(), def: null });
+        if (!eat(',')) break;
+        if (peek().t !== 'name') break;
+      }
+    }
+    expect(':');
+    const body = expr();
+    return { type: 'lambda', params, body };
+  }
+
+  function orExpr(): Node {
+    let e = andExpr();
+    if (atKw('or')) {
+      const items = [e];
+      while (eatKw('or')) items.push(andExpr());
+      e = { type: 'bool', op: 'or', items };
+    }
+    return e;
+  }
+  function andExpr(): Node {
+    let e = notExpr();
+    if (atKw('and')) {
+      const items = [e];
+      while (eatKw('and')) items.push(notExpr());
+      e = { type: 'bool', op: 'and', items };
+    }
+    return e;
+  }
+  function notExpr(): Node {
+    if (atKw('not')) { pos++; return { type: 'unary', op: 'not', e: notExpr() }; }
+    return cmpExpr();
+  }
+
+  function cmpExpr(): Node {
+    const first = bitOr();
+    const ops: string[] = [];
+    const rest: Node[] = [];
+    while (true) {
+      const t = peek();
+      if (t.t === 'op' && ['<', '>', '<=', '>=', '==', '!='].includes(t.v)) { pos++; ops.push(t.v); rest.push(bitOr()); continue; }
+      if (atKw('in')) { pos++; ops.push('in'); rest.push(bitOr()); continue; }
+      if (atKw('not') && peek(1).t === 'kw' && peek(1).v === 'in') { pos += 2; ops.push('not in'); rest.push(bitOr()); continue; }
+      if (atKw('is')) {
+        pos++;
+        if (eatKw('not')) ops.push('is not'); else ops.push('is');
+        rest.push(bitOr()); continue;
+      }
+      break;
+    }
+    if (!ops.length) return first;
+    return { type: 'cmp', first, ops, rest };
+  }
+
+  function bitOr(): Node { let e = bitXor(); while (at('|')) { pos++; e = { type: 'bin', op: '|', l: e, r: bitXor() }; } return e; }
+  function bitXor(): Node { let e = bitAnd(); while (at('^')) { pos++; e = { type: 'bin', op: '^', l: e, r: bitAnd() }; } return e; }
+  function bitAnd(): Node { let e = shift(); while (at('&')) { pos++; e = { type: 'bin', op: '&', l: e, r: shift() }; } return e; }
+  function shift(): Node { let e = arith(); while (at('<<') || at('>>')) { const op = next().v; e = { type: 'bin', op, l: e, r: arith() }; } return e; }
+  function arith(): Node { let e = term(); while (at('+') || at('-')) { const op = next().v; e = { type: 'bin', op, l: e, r: term() }; } return e; }
+  function term(): Node {
+    let e = unary();
+    while (at('*') || at('/') || at('//') || at('%') || at('@')) { const op = next().v; e = { type: 'bin', op, l: e, r: unary() }; }
+    return e;
+  }
+  function unary(): Node {
+    const t = peek();
+    if (t.t === 'op' && (t.v === '-' || t.v === '+' || t.v === '~')) { pos++; return { type: 'unary', op: t.v, e: unary() }; }
+    return power();
+  }
+  function power(): Node {
+    const base = postfix();
+    if (at('**')) { pos++; const exp = unary(); return { type: 'bin', op: '**', l: base, r: exp }; }
+    return base;
+  }
+
+  function postfix(): Node {
+    let e = atom();
+    while (true) {
+      if (eat('(')) e = parseCall(e);
+      else if (eat('[')) e = parseSubscript(e);
+      else if (eat('.')) { const name = expectName(); e = { type: 'attr', obj: e, name }; }
+      else break;
+    }
+    return e;
+  }
+
+  function parseCall(fn: Node): Node {
+    const args: Node[] = [];
+    const kwargs: KV[] = [];
+    if (!eat(')')) {
+      while (true) {
+        if (peek().t === 'name' && peek(1).t === 'op' && peek(1).v === '=') {
+          const k = next().v; pos++; // '='
+          kwargs.push({ k, v: expr() });
+        } else if (at('**')) { pos++; args.push({ type: 'dstar', e: expr(), line: peek().line }); }
+        else if (at('*')) { pos++; args.push({ type: 'star', e: expr(), line: peek().line }); }
+        else args.push(expr());
+        if (eat(',')) { if (eat(')')) break; continue; }
+        expect(')');
+        break;
+      }
+    }
+    return { type: 'call', fn, args, kwargs };
+  }
+
+  function parseSubscript(obj: Node): Node {
+    // 元素：expr | ':' 全选 | 切片 x(:y(:z))；逗号分隔构成元组（numpy 多维下标）
+    const isStop = (t: any) => t && t.t !== 'eof' && (t.v === ',' || t.v === ']');
+    const parseElem = (): Node => {
+      if (at(':')) {
+        // 单个 ':'（全选）：下一个记号是 ',' 或 ']'
+        if (pos + 1 < toks.length && isStop(toks[pos + 1])) { pos++; return { type: 'colonall', line: peek().line }; }
+        pos++;
+        const s: any = { type: 'slice-elem', lo: null, hi: null, step: null };
+        if (!at(':') && !at(']') && !at(',')) s.hi = expr();
+        if (eat(':')) { if (!at(']') && !at(',')) s.step = expr(); }
+        return s;
+      }
+      const e = expr();
+      if (eat(':')) {
+        const s: any = { type: 'slice-elem', lo: e, hi: null, step: null };
+        if (!at(']') && !at(',')) s.hi = expr();
+        if (eat(':')) { if (!at(']') && !at(',')) s.step = expr(); }
+        return s;
+      }
+      return e;
+    };
+    const elems: Node[] = [parseElem()];
+    while (eat(',')) {
+      if (at(']')) break;
+      elems.push(parseElem());
+    }
+    expect(']');
+    if (elems.length === 1) {
+      const e0 = elems[0];
+      if (e0.type === 'slice-elem') return { type: 'slice', obj, lo: e0.lo, hi: e0.hi, step: e0.step };
+      if (e0.type === 'colonall') return { type: 'slice', obj, lo: null, hi: null, step: null };
+      return { type: 'sub', obj, idx: e0 };
+    }
+    return { type: 'sub', obj, idx: { type: 'subtuple', items: elems } };
+  }
+
+  function atom(): Node {
+    const t = peek();
+    if (t.t === 'num') { pos++; return { type: 'num', v: t.v, line: t.line }; }
+    if (t.t === 'str' || t.t === 'fstr') {
+      // 连续字符串拼接
+      const parts: any[] = [];
+      while (peek().t === 'str' || peek().t === 'fstr') {
+        const st = next();
+        if (st.t === 'str') {
+          if (st.v.startsWith('\x00RAW\x00')) parts.push({ lit: st.v.slice(5), raw: true });
+          else parts.push({ lit: st.v });
+        } else parts.push(...parseFString(st.v, st.line).parts);
+      }
+      if (parts.length === 1 && parts[0].lit !== undefined && parts.length && !parts[0].expr) return { type: 'str', v: parts[0].lit, raw: !!parts[0].raw, line: t.line };
+      return { type: 'fstr', parts, line: t.line };
+    }
+    if (t.t === 'name') { pos++; return { type: 'name', id: t.v, line: t.line }; }
+    if (t.t === 'kw') {
+      if (t.v === 'True') { pos++; return { type: 'const', v: true }; }
+      if (t.v === 'False') { pos++; return { type: 'const', v: false }; }
+      if (t.v === 'None') { pos++; return { type: 'const', v: null }; }
+      if (t.v === 'not') { pos++; return { type: 'unary', op: 'not', e: notExpr() }; }
+      if (t.v === 'lambda') return parseLambda();
+      errs.push({ line: t.line, msg: `此处不能使用 '${t.v}'` });
+      throw new ParseBreak();
+    }
+    if (t.t === 'op') {
+      if (t.v === '(') {
+        pos++;
+        if (eat(')')) return { type: 'tuple', items: [] };
+        const e = expr();
+        if (atKw('for')) { const comp = compRest(e, 'list'); eat(')'); return comp; }
+        if (eat(',')) {
+          const items = [e];
+          while (!at(')')) {
+            if (at(',')) { pos++; continue; }
+            if (at('*')) { pos++; items.push({ type: 'star', e: expr(), line: peek().line }); continue; }
+            items.push(expr());
+          }
+          expect(')');
+          return { type: 'tuple', items };
+        }
+        expect(')');
+        return e;
+      }
+      if (t.v === '[') {
+        pos++;
+        if (eat(']')) return { type: 'list', items: [] };
+        let e: Node;
+        if (at('*')) { pos++; e = { type: 'star', e: expr(), line: peek().line }; }
+        else e = expr();
+        if (atKw('for')) { const comp = compRest(e, 'list'); eat(']'); return comp; }
+        const items = [e];
+        while (eat(',')) {
+          if (eat(']')) return { type: 'list', items };
+          if (at('*')) { pos++; items.push({ type: 'star', e: expr(), line: peek().line }); continue; }
+          items.push(expr());
+        }
+        expect(']');
+        return { type: 'list', items };
+      }
+      if (t.v === '{') return parseBrace();
+      if (t.v === '-' || t.v === '+' || t.v === '~') { pos++; return { type: 'unary', op: t.v, e: unary() }; }
+    }
+    errs.push({ line: t.line, msg: `无法解析的记号 '${t.t === 'eof' ? '结尾' : t.v || t.t}'` });
+    throw new ParseBreak();
+  }
+
+  function parseBrace(): Node {
+    pos++; // {
+    const line = peek().line;
+    if (eat('}')) return { type: 'dict', pairs: [], line };
+    if (at('**')) {
+      pos++;
+      const pairs: KV[] = [{ k: { type: 'dstar', e: expr(), line: peek().line } as any, v: null }];
+      while (eat(',')) {
+        if (eat('}')) return { type: 'dict', pairs, line };
+        if (at('**')) { pos++; pairs.push({ k: { type: 'dstar', e: expr(), line: peek().line } as any, v: null }); continue; }
+        const k = expr(); expect(':'); pairs.push({ k, v: expr() });
+      }
+      expect('}');
+      return { type: 'dict', pairs, line };
+    }
+    let first: Node;
+    if (at('*')) { pos++; first = { type: 'star', e: expr(), line: peek().line }; }
+    else first = expr();
+    if (eat(':')) {
+      const v = expr();
+      if (atKw('for')) { const comp = compRestDict(first, v, line); eat('}'); return comp; }
+      const pairs = [{ k: first, v }];
+      while (eat(',')) {
+        if (eat('}')) return { type: 'dict', pairs, line };
+        if (at('**')) { pos++; pairs.push({ k: { type: 'dstar', e: expr(), line: peek().line } as any, v: null }); continue; }
+        const k = expr(); expect(':'); pairs.push({ k, v: expr() });
+      }
+      expect('}');
+      return { type: 'dict', pairs, line };
+    }
+    if (atKw('for')) { const comp = compRest(first, 'set'); eat('}'); return comp; }
+    const items = [first];
+    while (eat(',')) {
+      if (eat('}')) return { type: 'set', items, line };
+      if (at('*')) { pos++; items.push({ type: 'star', e: expr(), line: peek().line }); continue; }
+      items.push(expr());
+    }
+    expect('}');
+    return { type: 'set', items, line };
+  }
+
+  function compRest(elt: Node, kind: 'list' | 'set'): Node {
+    const gens = parseGenerators();
+    return { type: 'comp', kind, elt, gens, line: peek().line };
+  }
+  function compRestDict(key: Node, val: Node, line: number): Node {
+    const gens = parseGenerators();
+    return { type: 'comp', kind: 'dict', key, val: elt2(val), gens, line };
+  }
+  const elt2 = (x: Node) => x;
+  function parseGenerators(): { target: Node; iter: Node; ifs: Node[] }[] {
+    const gens: { target: Node; iter: Node; ifs: Node[] }[] = [];
+    while (atKw('for')) {
+      pos++;
+      const target = parseTarget();
+      if (!eatKw('in')) { errs.push({ line: peek().line, msg: "推导式期望 'in'" }); throw new ParseBreak(); }
+      const iter = orExpr();
+      const ifs: Node[] = [];
+      while (eatKw('if')) ifs.push(orExpr());
+      gens.push({ target, iter, ifs });
+    }
+    return gens;
+  }
+
+  function parseFString(src: string, line: number): Node {
+    const parts: any[] = [];
+    let lit = '', i = 0;
+    while (i < src.length) {
+      const c = src[i];
+      if (c === '{') {
+        if (src[i + 1] === '{') { lit += '{'; i += 2; continue; }
+        let depth = 1, j = i + 1, inStr: string | null = null;
+        for (; j < src.length; j++) {
+          const cj = src[j];
+          if (inStr) { if (cj === '\\') { j++; continue; } if (cj === inStr) inStr = null; continue; }
+          if (cj === '"' || cj === "'") inStr = cj;
+          else if (cj === '{') depth++;
+          else if (cj === '}') { depth--; if (!depth) break; }
+        }
+        if (depth) { errs.push({ line, msg: 'f-string 花括号不配对' }); break; }
+        let exprSrc = src.slice(i + 1, j);
+        i = j + 1;
+        if (lit) { parts.push({ lit: unescapePy(lit) }); lit = ''; }
+        let conv: string | null = null, dbg = false;
+        if (exprSrc.endsWith('=') && !exprSrc.endsWith('==') && !exprSrc.endsWith('!=') && !exprSrc.endsWith('>=')) { dbg = true; exprSrc = exprSrc.slice(0, -1).trim(); }
+        const m = /!([rsa])\s*$/.exec(exprSrc);
+        if (m) { conv = m[1]; exprSrc = exprSrc.slice(0, -2).trim(); }
+        // 顶层冒号 → 格式 spec
+        let specDepth = 0, specIdx = -1, fIn: string | null = null;
+        for (let k = 0; k < exprSrc.length; k++) {
+          const ck = exprSrc[k];
+          if (fIn) { if (ck === fIn) fIn = null; continue; }
+          if (ck === '"' || ck === "'") fIn = ck;
+          else if (ck === '(' || ck === '[' || ck === '{') specDepth++;
+          else if (ck === ')' || ck === ']' || ck === '}') specDepth--;
+          else if (ck === ':' && specDepth === 0) { specIdx = k; break; }
+        }
+        if (specIdx >= 0) {
+          const spec = exprSrc.slice(specIdx + 1).trim();
+          exprSrc = exprSrc.slice(0, specIdx);
+          const SP_RE = /^(?:([^0{}<>^\d])?([<>^]))?(\d+)?(,)?(?:\.(\d+))?([bdoxXfeEgGns%])?$/;
+          if (spec && !SP_RE.test(spec)) { errs.push({ line, msg: `不支持的格式说明符 '${spec}'` }); throw new ParseBreak(); }
+          const node = miniExpr(exprSrc, line);
+          parts.push({ expr: node, conv, dbg, spec: spec || null, src: exprSrc });
+          continue;
+        }
+        const node = miniExpr(exprSrc, line);
+        parts.push({ expr: node, conv, dbg, src: exprSrc });
+        continue;
+      }
+      if (c === '}') { if (src[i + 1] === '}') { lit += '}'; i += 2; continue; } errs.push({ line, msg: 'f-string 出现单个 }' }); i++; continue; }
+      lit += c; i++;
+    }
+    if (lit) parts.push({ lit: unescapePy(lit) });
+    return { type: 'fstr', parts, line };
+  }
+
+  function miniExpr(src: string, line: number): Node {
+    const sub: Py2JsError[] = [];
+    const toks2 = lex(src, sub);
+    if (sub.length) { errs.push({ line, msg: sub[0].msg }); throw new ParseBreak(); }
+    const sub2 = createParser(toks2, sub);
+    let node: Node;
+    try { node = sub2.exprOnly(); } catch (e) { if (sub.length) errs.push({ line, msg: sub[0].msg }); throw e; }
+    return node;
+  }
+
+  return {
+    program,
+    exprOnly(): Node { const e = expr(); if (peek().t !== 'eof') { errs.push({ line: peek().line, msg: '表达式后有多余内容' }); throw new ParseBreak(); } return e; },
+  };
+}
+
+// ---------------- Codegen ----------------
+// 产物优先级层级（用于括号判断）
+const P_LAMBDA = 1, P_TERNARY = 2, P_OR = 3, P_NOT = 4, P_CMP = 5, P_BIT = 6, P_SHIFT = 9, P_ADD = 10, P_MUL = 11, P_UNARY = 12, P_POW = 13, P_ATOM = 15;
+
+const BIN_HELPER: Record<string, string> = { '+': '$add', '*': '$mul', '%': '$mod', '//': '$floordiv', '/': '$truediv', '-': '$sub', '&': '$band', '|': '$bor', '^': '$bxor', '**': '$pow', '@': '$matmul' };
+const BIN_DIRECT: Record<string, string> = { '<<': '<<', '>>': '>>' };
+
+const NAME2HELPER: Record<string, string> = {
+  len: '$len', abs: '$abs', sum: '$sum', sorted: '$sorted', reversed: '$reversed', enumerate: '$enumerate',
+  zip: '$zip', int: '$int', float: '$float', str: '$str', bool: '$bool', list: '$list', dict: '$dict',
+  set: '$set', tuple: '$tuple', map: '$map', filter: '$filter', any: '$any', all: '$all', ord: '$ord',
+  chr: '$chr', divmod: '$divmod', pow: '$pow', repr: '$repr', type: '$type', bin: '$bin', hex: '$hex', oct: '$oct',
+};
+
+function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<string> } {
+  const defs = new Set<string>();
+  const classNames = new Set<string>();
+  const userBindings = new Set<string>();
+  const numericVars = new Set<string>();
+  const NUM_CALLS = ['len', 'int', 'float', 'sum', 'round', 'min', 'max', 'abs', 'pow', 'ord'];
+  function isNum(n: Node): boolean {
+    if (!n) return false;
+    switch (n.type) {
+      case 'num': return true;
+      case 'name': return numericVars.has(n.id);
+      case 'unary': return (n.op === '-' || n.op === '+') && isNum(n.e);
+      case 'bin': return ['+', '-', '*', '/', '//', '%', '**'].includes(n.op) && isNum(n.l) && isNum(n.r);
+      case 'call': return !!n.fn && n.fn.type === 'name' && NUM_CALLS.includes(n.fn.id) && !userBindings.has(n.fn.id);
+      default: return false;
+    }
+  }
+  let uid = 0;
+  const newId = () => `$t${++uid}`;
+
+  // 预收集所有 def 名（供调用分派）
+  const collectDefs = (nodes: Node[]) => {
+    for (const st of nodes) {
+      if (st.type === 'def') { defs.add(st.name); userBindings.add(st.name); collectDefs(st.body); }
+      else if (st.type === 'class') { defs.add(st.name); classNames.add(st.name); for (const m of st.body) { if (m.type === 'def') collectDefs(m.body); } }
+      else if (st.type === 'if') { collectDefs(st.body); collectDefs(st.orelse); }
+      else if (st.type === 'while') { collectDefs(st.body); collectDefs((st as any).orelse || []); }
+      else if (st.type === 'for') { collectDefs(st.body); collectDefs((st as any).orelse || []); }
+    }
+  };
+  collectDefs(prog);
+
+  // ---- 表达式生成 ----
+  function genE(n: Node, prec = 0): string {
+    switch (n.type) {
+      case 'num': return n.v;
+      case 'str': return n.raw ? JSON.stringify(n.v) : JSON.stringify(n.v);
+      case 'const': return n.v === null ? 'null' : String(n.v);
+      case 'name': return NAME2HELPER[n.id] && !userBindings.has(n.id) ? NAME2HELPER[n.id] : ident(n.id);
+      case 'fstr': return genFstr(n);
+      case 'list': return `[${n.items.map((x: Node) => (x as any).type === 'star' ? `...$arr(${genE((x as any).e, 0)})` : genE(x, 0)).join(', ')}]`;
+      case 'tuple': return `[${n.items.map((x: Node) => (x as any).type === 'star' ? `...$arr(${genE((x as any).e, 0)})` : genE(x, 0)).join(', ')}]`;
+      case 'set': return `new Set([${n.items.map((x: Node) => (x as any).type === 'star' ? `...$arr(${genE((x as any).e, 0)})` : genE(x, 0)).join(', ')}])`;
+      case 'dict': return genDict(n);
+      case 'bin': return genBin(n, prec);
+      case 'unary': return genUnary(n, prec);
+      case 'bool': return genBool(n, prec);
+      case 'cmp': return genCmp(n);
+      case 'walrus': return `(${ident((n as any).id)} = ${genE((n as any).value, 0)})`;
+      case 'ifexp': {
+        const js = `$bool(${genE(n.test, 0)}) ? ${genE(n.body, P_TERNARY + 1)} : ${genE(n.orelse, P_TERNARY)}`;
+        return prec > P_TERNARY ? `(${js})` : js;
+      }
+      case 'lambda': {
+        const ps = n.params.map((p: any) => ident(p.name)).join(', ');
+        const js = `(${ps}) => ${genE(n.body, P_TERNARY + 1)}`;
+        return prec > P_LAMBDA ? `(${js})` : js;
+      }
+      case 'attr': return `$ga(${genE(n.obj, P_ATOM)}, ${JSON.stringify(n.name)})`;
+      case 'star': case 'dstar': throw new Error('内部：展开语法只能用于调用实参或列表/字典字面量');
+      case 'sub': return `(${genE(n.obj, P_ATOM)} === null ? (() => { throw new Error("TypeError: 'NoneType' 不可索引"); })() : $idx(${genE(n.obj, 0)}, ${genSubIdx(n.idx)}))`;
+      case 'slice': {
+        const a = (x: Node) => x ? genE(x, 0) : 'undefined';
+        return `$slice(${genE(n.obj, 0)}, ${a(n.lo)}, ${a(n.hi)}, ${a(n.step)})`;
+      }
+      case 'call': return genCall(n);
+      case 'comp': return genComp(n);
+      default: throw new Error('codegen: 未知节点 ' + n.type);
+    }
+  }
+
+  // 下标生成：tuple/subtuple（元组下标）打 __pytuple 标记，与列表（花式索引）区分
+  const genSubElem = (x: Node): string => {
+    if ((x as any).type === 'colonall') return "':'";
+    if ((x as any).type === 'slice-elem') {
+      const a = (y: Node | null) => (y ? genE(y, 0) : 'undefined');
+      return `{ __pyslice: true, start: ${a((x as any).lo)}, end: ${a((x as any).hi)}, step: ${a((x as any).step)} }`;
+    }
+    return genE(x, 0);
+  };
+  const genSubIdx = (n: Node): string => {
+    const t = n as any;
+    if (t && (t.type === 'tuple' || t.type === 'subtuple')) return `{ __pytuple: [${t.items.map((x: Node) => genSubElem(x)).join(', ')}] }`;
+    return genE(n, 0);
+  };
+
+  const safeAttr = (name: string) => /^[A-Za-z_$][\w$]*$/.test(name) ? name : `[${JSON.stringify(name)}]`;
+
+  function genFstr(n: Node): string {
+    let s = '`';
+    for (const p of n.parts) {
+      if (p.lit !== undefined) s += p.lit.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
+      else {
+        const inner = genE(p.expr, 0);
+        const base = p.conv === 'r' ? `$repr(${inner})` : p.conv === 's' ? `$str(${inner})` : inner;
+        const val = p.spec ? `$fmt(${base}, ${JSON.stringify(p.spec)})` : `$str(${base})`;
+        if (p.dbg) {
+          const label = p.src.replace(/[\\`$"]/g, ' ');
+          s += `${JSON.stringify(label + '=')}\${$repr(${inner})}`;
+        } else s += `\${${val}}`;
+      }
+    }
+    return s + '`';
+  }
+
+  function genDict(n: Node): string {
+    if (!n.pairs.length) return '{}';
+    const items = n.pairs.map(({ k, v }: KV) => {
+      if ((k as any).type === 'dstar') return `...${genE((k as any).e, 0)}`;
+      const kjs = genE(k, 0);
+      // 字符串/数字字面量键直接生成，其他用计算键
+      if ((k.type === 'str' && !k.raw) || k.type === 'num') return `${kjs}: ${genE(v, 0)}`;
+      if (k.type === 'str') return `${JSON.stringify(k.v)}: ${genE(v, 0)}`;
+      return `[${kjs}]: ${genE(v, 0)}`;
+    });
+    return `{${items.join(', ')}}`;
+  }
+
+  function genBin(n: Node, prec: number): string {
+    const helper = BIN_HELPER[n.op];
+    if (helper) {
+      if (n.op === '+' && isNum(n.l) && isNum(n.r)) {
+        return `(${genE(n.l, P_ADD)} + ${genE(n.r, P_ADD + 1)})`;
+      }
+      const js = `${helper}(${genE(n.l, 0)}, ${genE(n.r, 0)})`;
+      return prec > P_ATOM ? `(${js})` : js;
+    }
+    const op = BIN_DIRECT[n.op] ?? n.op;
+    const myP = n.op === '**' ? P_POW : n.op === '<<' || n.op === '>>' ? P_SHIFT : ['&', '|', '^'].includes(n.op) ? P_BIT : n.op === '*' || n.op === '/' ? P_MUL : P_ADD;
+    // ** 右结合，其余左结合
+    const lp = n.op === '**' ? myP + 1 : myP;
+    const rp = n.op === '**' ? myP : myP + 1;
+    const js = `${genE(n.l, lp)} ${op} ${genE(n.r, rp)}`;
+    return prec > myP ? `(${js})` : js;
+  }
+
+  function genUnary(n: Node, prec: number): string {
+    const op = n.op === 'not' ? '' : n.op; // not 走 helper
+    const js = n.op === 'not' ? `$not(${genE(n.e, 0)})` : n.op === '-' ? `$neg(${genE(n.e, P_UNARY)})` : `${op}${genE(n.e, P_UNARY)}`;
+    return prec > P_UNARY ? `(${js})` : js;
+  }
+
+  function genBool(n: Node, prec: number): string {
+    // 保留短路 + Python truthy 语义：a and b → (!$bool(a) ? a : b)（三元嵌套）
+    const fold = (items: Node[], op: string, idx = 0): string => {
+      const head = items[idx];
+      if (idx === items.length - 1) return genE(head, P_TERNARY);
+      const rest = fold(items, op, idx + 1);
+      const h = genE(head, P_TERNARY + 1);
+      const t = `$sh${++uid}`;
+      return op === 'and'
+        ? `(() => { let ${t} = ${h}; return $bool(${t}) ? ${rest} : ${t}; })()`
+        : `(() => { let ${t} = ${h}; return $bool(${t}) ? ${t} : ${rest}; })()`;
+    };
+    const js = fold(n.items, n.op);
+    return prec > P_TERNARY ? `(${js})` : js;
+  }
+
+  function genCmp(n: Node): string {
+    const opJs = (op: string, l: string, r: string): string => {
+      switch (op) {
+        case '<': return `$lt(${l}, ${r})`;
+        case '>': return `$gt(${l}, ${r})`;
+        case '<=': return `$le(${l}, ${r})`;
+        case '>=': return `$ge(${l}, ${r})`;
+        case '==': return `$eq(${l}, ${r})`;
+        case '!=': return `$ne(${l}, ${r})`;
+        case 'in': return `$in(${l}, ${r})`;
+        case 'not in': return `!$in(${l}, ${r})`;
+        case 'is': return `${l} === ${r}`;
+        case 'is not': return `${l} !== ${r}`;
+      }
+      throw new Error('cmp op');
+    };
+    // 全 temp 中间量，避免重复求值副作用
+    const temps: string[] = [];
+    const gen = (e: Node): string => {
+      if (e.type === 'name' || e.type === 'num' || e.type === 'const') return genE(e, 0);
+      const t = newId();
+      temps.push(`const ${t} = ${genE(e, 0)};`);
+      return t;
+    };
+    const parts: string[] = [];
+    let left = gen(n.first);
+    for (let i = 0; i < n.ops.length; i++) {
+      const right = gen(n.rest[i]);
+      parts.push(opJs(n.ops[i], left, right));
+      left = right;
+    }
+    if (!temps.length) return parts.join(' && ');
+    return `(function () { ${temps.join(' ')} return ${parts.join(' && ')}; })()`;
+  }
+
+  const genA = (a: Node): string => {
+    const t = (a as any).type;
+    if (t === 'star') return `...$arr(${genE((a as any).e, 0)})`;
+    if (t === 'dstar') throw new Error('内部：dstar 需在调用层处理');
+    return genE(a, 0);
+  };
+
+  function genCall(n: Node): string {
+    const fn = n.fn;
+    // super().m(args) 特判（类方法内）
+    if (fn.type === 'attr' && fn.obj.type === 'call' && (fn.obj.fn as any).type === 'name' && (fn.obj.fn as any).id === 'super' && !(fn.obj as any).args.length) {
+      if (!classCtx || !classCtx.base) { errs.push({ line: n.line || 0, msg: 'super() 只能在类方法内使用' }); return 'null'; }
+      const selfRef = classCtx.selfP ? ident(classCtx.selfP) : 'null';
+      return `$M2(${JSON.stringify(classCtx.base)}, ${selfRef}, ${JSON.stringify(fn.name)}, [${n.args.map(genA).join(', ')}])`;
+    }
+    // 方法调用
+    if (fn.type === 'attr') return genMethod(n);
+    if (fn.type === 'name') {
+      const name = fn.id;
+      if (defs.has(name)) {
+        if (classNames.has(name)) {
+          if (n.kwargs.length) { errs.push({ line: n.line || 0, msg: `类 ${name}() 实例化暂不支持关键字实参` }); return 'null'; }
+          return `$NEW(${JSON.stringify(name)}, [${n.args.map(genA).join(', ')}])`;
+        }
+        if (n.kwargs.length || n.args.some((a: any) => a.type === 'dstar')) {
+          const pos = n.args.filter((a: any) => a.type !== 'dstar').map(genA).join(', ');
+          const kwParts = [
+            ...n.args.filter((a: any) => a.type === 'dstar').map((a: any) => `...${genE(a.e, 0)}`),
+            ...n.kwargs.map((kv: KV) => `${JSON.stringify(kv.k)}: ${genE(kv.v, 0)}`),
+          ];
+          return `$kw(${ident(name)}, ${JSON.stringify(name)}, [${pos}], {${kwParts.join(', ')}})`;
+        }
+        return `${ident(name)}(${n.args.map(genA).join(', ')})`;
+      }
+      if (name === 'print') return genPrint(n);
+      const bi = genBuiltin(name, n);
+      if (bi !== null) return bi;
+      // 未知名字：直接生成调用（运行时自然报错）
+      if (n.kwargs.length) { errs.push({ line: n.line || 0, msg: `未知函数 ${name}() 不支持关键字实参` }); return 'null'; }
+      return `${ident(name)}(${n.args.map(genA).join(', ')})`;
+    }
+    // 表达式调用（lambda 赋值等）
+    if (n.kwargs.length) { errs.push({ line: n.line || 0, msg: '该调用不支持关键字实参' }); return 'null'; }
+    return `${genE(fn, P_ATOM)}(${n.args.map(genA).join(', ')})`;
+  }
+
+  const kwGet = (n: Node, k: string): Node | null => {
+    const f = n.kwargs.find((kv: KV) => kv.k === k);
+    return f ? f.v : null;
+  };
+  const kwCheck = (n: Node, allowed: string[]) => {
+    for (const kv of n.kwargs) {
+      if (!allowed.includes(kv.k)) { errs.push({ line: n.line || 0, msg: `'${kv.k}' 不是此调用的有效关键字实参` }); }
+    }
+  };
+
+  function genPrint(n: Node): string {
+    kwCheck(n, ['sep', 'end', 'flush']);
+    const sep = kwGet(n, 'sep'), end = kwGet(n, 'end');
+    const args = n.args.map((a: Node) => (a as any).type === 'star' ? `...$arr(${genE((a as any).e, 0)})` : genE(a, 0)).join(', ');
+    if (n.args.some((a: any) => a.type === 'dstar')) { errs.push({ line: n.line || 0, msg: 'print() 不支持 ** 展开' }); return 'null'; }
+    return `$print([${args}], ${sep ? genE(sep, 0) : 'undefined'}, ${end ? genE(end, 0) : 'undefined'})`;
+  }
+
+  function genBuiltin(name: string, n: Node): string | null {
+    if (n.args.some((x: any) => x.type === 'dstar')) { errs.push({ line: n.line || 0, msg: `内建函数 ${name}() 暂不支持 ** 展开` }); return 'null'; }
+    const hasStar = n.args.some((x: any) => x.type === 'star');
+    const a = (i: number, d = 'undefined') => { const x = n.args[i]; if (!x) return d; return (x as any).type === 'star' ? `...$arr(${genE(x.e, 0)})` : genE(x, 0); };
+    const all = () => n.args.map((x: Node) => genA(x)).join(', ');
+    const noKw = (extra: string[] = []) => kwCheck(n, extra);
+    switch (name) {
+      case 'len': noKw(); return `$len(${a(0)})`;
+      case 'range': noKw(); return `$range(${all() || '0'})`;
+      case 'abs': noKw(); return `Math.abs(${a(0)})`;
+      case 'sum': noKw(); return `$sum(${a(0)}, ${a(1, 'undefined')})`;
+      case 'min': case 'max': noKw(['key']); { const kf = kwGet(n, 'key') ? genE(kwGet(n, 'key')!, 0) : 'null'; return n.args.length === 1 && !hasStar ? `$minmax($arr(${a(0)}), ${name === 'min'}, ${kf})` : `$minmax([${all()}], ${name === 'min'}, ${kf})`; }
+      case 'round': noKw(); return `$round(${a(0)}, ${a(1, 'undefined')})`;
+      case 'sorted': noKw(['key', 'reverse']); return `$sorted(${a(0)}, ${kwGet(n, 'key') ? genE(kwGet(n, 'key')!, 0) : 'null'}, ${kwGet(n, 'reverse') ? `$bool(${genE(kwGet(n, 'reverse')!, 0)})` : 'false'})`;
+      case 'reversed': noKw(); return `$reversed(${a(0)})`;
+      case 'enumerate': noKw(); return `$enumerate(${a(0)}, ${a(1, 'undefined')})`;
+      case 'zip': noKw(); return `$zip(${all()})`;
+      case 'int': noKw(); return n.args.length ? `$int(${a(0)}, ${a(1, 'undefined')})` : '0';
+      case 'float': noKw(); return n.args.length ? `$float(${a(0)})` : '0';
+      case 'str': noKw(); return n.args.length ? `$str(${a(0)})` : `''`;
+      case 'bool': noKw(); return n.args.length ? `$bool(${a(0)})` : 'false';
+      case 'list': noKw(); return n.args.length ? `$list(${a(0)})` : '[]';
+      case 'dict': noKw(); return n.args.length ? `$dict(${a(0)})` : '{}';
+      case 'set': noKw(); return n.args.length ? `$set(${a(0)})` : 'new Set()';
+      case 'tuple': noKw(); return n.args.length ? `$tuple(${a(0)})` : '[]';
+      case 'map': noKw(); return `$map(${all()})`;
+      case 'filter': noKw(); return `$filter(${all()})`;
+      case 'any': noKw(); return `$any(${a(0)})`;
+      case 'all': noKw(); return `$all(${a(0)})`;
+      case 'ord': noKw(); return `$ord(${a(0)})`;
+      case 'chr': noKw(); return `$chr(${a(0)})`;
+      case 'divmod': noKw(); return `$divmod(${all()})`;
+      case 'pow': noKw(); return `$pow(${all()})`;
+      case 'repr': noKw(); return `$repr(${a(0)})`;
+      case 'type': noKw(); return `$type(${a(0)})`;
+      case 'bin': noKw(); return `$bin(${a(0)})`;
+      case 'hex': noKw(); return `$hex(${a(0)})`;
+      case 'oct': noKw(); return `$oct(${a(0)})`;
+      case 'input': errs.push({ line: n.line || 0, msg: 'input() 在浏览器不可用，请在编辑器里写死输入数据' }); return "''";
+      case 'open': errs.push({ line: n.line || 0, msg: '文件读写(open)在浏览器不可用' }); return 'null';
+      case 'isinstance': {
+        const x = n.args[0], c = n.args[1];
+        if (!x || !c) { errs.push({ line: n.line || 0, msg: 'isinstance() 需要 2 个参数' }); return 'null'; }
+        const chk = (cn: string): string | null => {
+          if (classNames.has(cn)) return `$isinst(${genE(x, 0)}, ${JSON.stringify(cn)})`;
+          const BI: Record<string, string> = {
+            int: "(v) => typeof v === 'number' && Number.isInteger(v)", float: "(v) => typeof v === 'number'",
+            str: "(v) => typeof v === 'string'", bool: "(v) => typeof v === 'boolean'",
+            list: "Array.isArray", tuple: "Array.isArray", set: "(v) => v instanceof Set",
+            dict: "(v) => v !== null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Set) && !v.__cls",
+            NoneType: "(v) => v === null",
+          };
+          return BI[cn] ? `(${BI[cn]})(${genE(x, 0)})` : null;
+        };
+        if (c.type === 'name') { const r = chk(c.id); if (r) return r; }
+        if (c.type === 'tuple') {
+          const parts = c.items.map((it: Node) => it.type === 'name' ? chk(it.id) : null);
+          if (parts.every(p => p)) return `(${parts.join(' || ')})`;
+        }
+        errs.push({ line: n.line || 0, msg: 'isinstance 第二个参数需为已定义的类名或内建类型名' }); return 'null';
+      }
+      case 'next': noKw(); return `$next2(${a(0)})`;
+      case 'iter': noKw(); return `$arr(${a(0)})`;
+      case 'callable': noKw(); return `(typeof ${a(0)} === 'function')`;
+      case 'hasattr': noKw(); return `(() => { try { $ga(${a(0)}, ${a(1)}); return true; } catch (e) { return false; } })()`;
+      case 'getattr': noKw(); return n.args.length >= 3 ? `(() => { try { return $ga(${a(0)}, ${a(1)}); } catch (e) { return ${a(2)}; } })()` : `$ga(${a(0)}, ${a(1)})`;
+      case 'hash': case 'id': case 'vars': case 'dir': case 'setattr': case 'super': case 'format':
+        errs.push({ line: n.line || 0, msg: `${name}() 暂不支持` }); return 'null';
+      default: return null;
+    }
+  }
+
+  // 方法调用映射
+  function genMethod(n: Node): string {
+    const m: any = n.fn;
+    const obj = genE(m.obj, 0);
+    const name = m.name;
+    const a = (i: number, d = 'undefined') => n.args[i] ? genE(n.args[i], 0) : d;
+    const all = () => n.args.map((x: Node) => genE(x, 0)).join(', ');
+    const noKw = (extra: string[] = []) => kwCheck(n, extra);
+    switch (name) {
+      case 'append': noKw(); if (n.args.length !== 1) { errs.push({ line: n.line || 0, msg: 'append() 需要 1 个参数' }); } return `${obj}.push(${a(0)})`;
+      case 'extend': noKw(); return `$extend(${obj}, ${a(0)})`;
+      case 'insert': noKw(); return `$insert(${obj}, ${a(0)}, ${a(1)})`;
+      case 'pop': noKw(); return n.args.length ? `$pop(${obj}, ${a(0)})` : `$pop(${obj})`;
+      case 'remove': noKw(); return `(${obj} instanceof Set ? $sremove(${obj}, ${a(0)}) : $remove(${obj}, ${a(0)}))`;
+      case 'index': noKw(); return `(typeof ${obj} === 'string' ? ${obj}.indexOf($str(${a(0)})) : $index(${obj}, ${a(0)}))`;
+      case 'count': noKw(); return `$count(${obj}, ${a(0)})`;
+      case 'reverse': noKw(); return `(${obj}.reverse(), undefined)`;
+      case 'sort': noKw(['key', 'reverse', 'axis']); { const sAx = kwGet(n, 'axis'); return `(() => { const $o = ${obj}; if ($o && ($o.__ndarray || $o.__npmodule)) return $MOBJ($o, 'sort', [${a(0)}], { ${sAx ? `axis: ${genE(sAx, 0)}` : ''} }); $sortInplace($o, ${kwGet(n, 'key') ? genE(kwGet(n, 'key')!, 0) : 'null'}, ${kwGet(n, 'reverse') ? `$bool(${genE(kwGet(n, 'reverse')!, 0)})` : 'false'}); return undefined; })()`; }
+      case 'copy': noKw(); return `$copy(${obj})`;
+      case 'clear': noKw(); return `$clear(${obj})`;
+      case 'lower': noKw(); return `${obj}.toLowerCase()`;
+      case 'upper': noKw(); return `${obj}.toUpperCase()`;
+      case 'strip': noKw(); return n.args.length ? `$strip(${obj}, ${a(0)})` : `$strip(${obj})`;
+      case 'lstrip': noKw(); return n.args.length ? `$lstrip(${obj}, ${a(0)})` : `$lstrip(${obj})`;
+      case 'rstrip': noKw(); return n.args.length ? `$rstrip(${obj}, ${a(0)})` : `$rstrip(${obj})`;
+      case 'split': noKw(); return n.args.length ? `${obj}.split(${a(0)})` : `$wsplit(${obj})`;
+      case 'rsplit': errs.push({ line: n.line || 0, msg: 'rsplit 暂不支持，请用 split' }); return 'null';
+      case 'join': noKw(); return `$join(${a(0)}, ${obj})`;
+      case 'replace': noKw(); return `$replace(${obj}, ${a(0)}, ${a(1)})`;
+      case 'find': noKw(); return `$find(${obj}, ${a(0)})`;
+      case 'rfind': noKw(); return `$rfind(${obj}, ${a(0)})`;
+      case 'startswith': noKw(); return `$startswith(${obj}, ${a(0)})`;
+      case 'endswith': noKw(); return `$endswith(${obj}, ${a(0)})`;
+      case 'title': noKw(); return `$title(${obj})`;
+      case 'capitalize': noKw(); return `$capitalize(${obj})`;
+      case 'zfill': noKw(); return `$zfill(${obj}, ${a(0)})`;
+      case 'center': noKw(); return `$center(${obj}, ${a(0)}, ${a(1)})`;
+      case 'isdigit': noKw(); return `$isdigit(${obj})`;
+      case 'isalpha': noKw(); return `$isalpha(${obj})`;
+      case 'isalnum': noKw(); return `$isalnum(${obj})`;
+      case 'isspace': noKw(); return `$isspace(${obj})`;
+      case 'islower': noKw(); return `$islower(${obj})`;
+      case 'isupper': noKw(); return `$isupper(${obj})`;
+      case 'format': errs.push({ line: n.line || 0, msg: 'str.format 不支持，请改用 f-string' }); return 'null';
+      case 'keys': noKw(); return `(${obj}.__cls ? $M(${obj}, 'keys', []) : Object.keys(${obj}))`;
+      case 'values': noKw(); return `(${obj}.__cls ? $M(${obj}, 'values', []) : Object.values(${obj}))`;
+      case 'items': noKw(); return `(${obj}.__cls ? $M(${obj}, 'items', []) : $items(${obj}))`;
+      case 'get': noKw(); return `(${obj}.__cls ? $M(${obj}, 'get', [${all()}]) : ${n.args.length >= 2 ? `$dget(${obj}, ${a(0)}, ${a(1)})` : `$dget(${obj}, ${a(0)})`})`;
+      case 'update': noKw(); return `$dupdate(${obj}, ${a(0)})`;
+      case 'setdefault': noKw(); return n.args.length >= 2 ? `$dsetdef(${obj}, ${a(0)}, ${a(1)})` : `$dsetdef(${obj}, ${a(0)})`;
+      case 'add': noKw(); return `${obj}.add(${a(0)})`;
+      case 'discard': noKw(); return `${obj}.delete(${a(0)})`;
+      case 'union': noKw(); return `$union(${obj}, ${a(0)})`;
+      case 'intersection': noKw(); return `$intersection(${obj}, ${a(0)})`;
+      case 'difference': noKw(); return `$difference(${obj}, ${a(0)})`;
+      default: {
+        // 未知方法：普通对象（含 numpy 数组）直调原生方法；用户类实例查方法表
+        const kws = (n.kwargs || []).map((kv: KV) => `${JSON.stringify(kv.k)}: ${genE(kv.v, 0)}`).join(', ');
+        return `(() => { const $o = ${obj}; return $MOBJ($o, ${JSON.stringify(name)}, [${all()}], {${kws}}); })()`;
+      }
+    }
+  }
+
+  function genComp(n: Node): string {
+    const build = (gi: number, acc: string): string => {
+      if (gi === n.gens.length) {
+        if (n.kind === 'list') return acc + `$r.push(${genE(n.elt, 0)});`;
+        if (n.kind === 'set') return acc + `$r.add(${genE(n.elt, 0)});`;
+        return acc + `$r[${genE(n.key, 0)}] = ${genE(n.val, 0)};`;
+      }
+      const g = n.gens[gi];
+      const tgt = destruct(g.target);
+      let inner = build(gi + 1, acc);
+      for (const f of [...g.ifs].reverse()) inner = `if (!$bool(${genE(f, 0)})) continue; ` + inner;
+      return `for (const ${tgt} of $iter(${genE(g.iter, 0)})) { ${inner} }`;
+    };
+    const init = n.kind === 'list' ? 'const $r = [];' : n.kind === 'set' ? 'const $r = new Set();' : 'const $r = {};';
+    return `(() => { ${init} ${build(0, '')} return $r; })()`;
+  }
+
+  // 赋值/解包目标 → JS 解构目标
+  function destruct(t: Node): string {
+    if (t.type === 'tuple') return `[${t.items.map(destruct).join(', ')}]`;
+    return genE(t, P_ATOM);
+  }
+
+  // ---- 语句生成 ----
+  const lines: string[] = [];
+  let ind = 1;
+  const W = (s: string) => lines.push('  '.repeat(ind) + s);
+  let brkFlag: string | null = null; // while/for-else 的 break 标志
+  let classCtx: { base: string | null; selfP: string | null } | null = null;
+
+  function collectLocals(body: Node[]): Set<string> {
+    const names = new Set<string>();
+    const addTarget = (t: Node) => {
+      if (t.type === 'name') names.add(t.id);
+      else if (t.type === 'tuple') t.items.forEach(addTarget);
+    };
+    const scanAll = (n: any) => {
+      if (!n || typeof n !== 'object') return;
+      if (Array.isArray(n)) { n.forEach(scanAll); return; }
+      if (typeof n.type === 'string') {
+        if (n.type === 'walrus') names.add(n.id);
+        else if (n.type === 'def' || n.type === 'class') return; // 嵌套作用域自管
+        Object.values(n).forEach(scanAll);
+      }
+    };
+    const walk = (nodes: Node[]) => {
+      for (const st of nodes) {
+        scanAll(st);
+        if (st.type === 'assign') st.targets.forEach(addTarget);
+        else if (st.type === 'aug') addTarget(st.target.type === 'name' ? st.target : { type: 'none' });
+        else if (st.type === 'if') { walk(st.body); walk(st.orelse); }
+        else if (st.type === 'while') { walk(st.body); walk((st as any).orelse || []); }
+        else if (st.type === 'for') { addTarget(st.target); walk(st.body); walk((st as any).orelse || []); }
+        else if (st.type === 'try') { (st as any).handlers.forEach((h: any) => { if (h.name) names.add(h.name); walk(h.body); }); walk((st as any).orelse || []); walk((st as any).finalbody || []); }
+        else if (st.type === 'def') { /* function 声明自带绑定，不能重复 let 声明 */ }
+      }
+    };
+    walk(body);
+    return names;
+  }
+
+  // 收集 global / nonlocal 声明的名字（不深入 def/class）
+  const collectNL = (nodes: Node[]): Set<string> => {
+    const out = new Set<string>();
+    const walk2 = (ns: Node[]) => {
+      for (const st of ns) {
+        if (st.type === 'global' || st.type === 'nonlocal') (st as any).names.forEach((n: string) => out.add(n));
+        else if (st.type === 'if') { walk2(st.body); walk2(st.orelse); }
+        else if (st.type === 'while') { walk2(st.body); walk2((st as any).orelse || []); }
+        else if (st.type === 'for') { walk2(st.body); walk2((st as any).orelse || []); }
+        else if (st.type === 'try') { walk2(st.body); (st as any).handlers.forEach((h: any) => walk2(h.body)); walk2((st as any).orelse || []); walk2((st as any).finalbody || []); }
+      }
+    };
+    walk2(nodes);
+    return out;
+  };
+
+  // 函数体是否直接含 yield（不深入嵌套 def/class）
+  const scanYield = (nodes: Node[]): boolean => nodes.some((st: any) => {
+    if (st.type === 'yield') return true;
+    if (st.type === 'if') return scanYield(st.body) || scanYield(st.orelse || []);
+    if (st.type === 'while') return scanYield(st.body) || scanYield(st.orelse || []);
+    if (st.type === 'for') return scanYield(st.body) || scanYield(st.orelse || []);
+    if (st.type === 'try') return scanYield(st.body) || st.handlers.some((h: any) => scanYield(h.body)) || scanYield(st.orelse || []) || scanYield(st.finalbody || []);
+    return false;
+  });
+
+  function genBody(body: Node[]) {
+    for (const st of body) genStmt(st);
+  }
+
+  function genStmt(st: Node) {
+    switch (st.type) {
+      case 'assign': genAssign(st); break;
+      case 'aug': {
+        const t = st.target;
+        const v = genE(st.value, 0);
+        const helper = BIN_HELPER[st.op];
+        const inlineAdd = st.op === '+' && isNum(t) && isNum(st.value);
+        const opJs = helper ? (l: string) => (inlineAdd ? `(${l} + ${v})` : `${helper}(${l}, ${v})`) : (l: string) => `${l} ${st.op} ${v}`;
+        if (t.type === 'name') { if (!inlineAdd) numericVars.delete(t.id); W(`${ident(t.id)} = ${opJs(ident(t.id))};`); }
+        else if (t.type === 'attr') W(`${genE(t.obj, P_ATOM)}.${safeAttr(t.name)} = ${opJs(`${genE(t.obj, P_ATOM)}.${safeAttr(t.name)}`)};`);
+        else if (t.type === 'sub') W(`$setidx(${genE(t.obj, 0)}, ${genSubIdx(t.idx)}, ${opJs(`$idx(${genE(t.obj, 0)}, ${genSubIdx(t.idx)})`)});`);
+        break;
+      }
+      case 'expr': W(`${genE(st.e, 0)};`); break;
+      case 'import': {
+        const nm = ident(st.asname || st.module);
+        W(`const ${nm} = $use(${JSON.stringify(st.module)});`);
+        break;
+      }
+      case 'fromimport': {
+        for (const it of st.names) W(`const ${ident(it.asname || it.name)} = $use(${JSON.stringify(st.module)})[${JSON.stringify(it.name)}];`);
+        break;
+      }
+      case 'if': {
+        W(`if ($bool(${genE(st.test, 0)})) {`);
+        ind++; genBody(st.body); ind--;
+        if (st.orelse.length) {
+          W('} else {');
+          ind++; genBody(st.orelse); ind--;
+          W('}');
+        } else W('}');
+        break;
+      }
+      case 'while': genWhile(st); break;
+      case 'for': genFor(st); break;
+      case 'try': genTry(st); break;
+      case 'class': genClass(st); break;
+      case 'raise': W(`throw $mkexc(${JSON.stringify((st as any).cls)}, [${(st as any).args.map((a: Node) => genE(a, 0)).join(', ')}]);`); break;
+      case 'del': {
+        for (const t of (st as any).items) {
+          if (t.type === 'name') { numericVars.delete(t.id); W(`${ident(t.id)} = undefined;`); }
+          else if (t.type === 'sub') W(`$delit(${genE(t.obj, 0)}, ${genE(t.idx, 0)});`);
+        }
+        break;
+      }
+      case 'yield': W((st as any).e ? `yield ${genE((st as any).e, 0)};` : 'yield;'); break;
+      case 'global': case 'nonlocal': break;
+      case 'def': genFunc(st); break;
+      case 'return': W(st.e ? `return ${genE(st.e, 0)};` : 'return;'); break;
+      case 'break': W(brkFlag ? `${brkFlag} = true; break;` : 'break;'); break;
+      case 'continue': W('continue;'); break;
+      case 'pass': break;
+      case 'assert': W(`$assert(${genE(st.e, 0)}${st.msg ? `, ${genE(st.msg, 0)}` : ''});`); break;
+      default: break;
+    }
+  }
+
+  function genAssign(st: Node) {
+    const value = genE(st.value, 0);
+    const targets = st.targets;
+    // 链式：a = b = expr（仅 name 目标）
+    if (targets.length > 1) {
+      if (targets.some((t: Node) => t.type !== 'name')) {
+        errs.push({ line: st.line || 0, msg: '链式赋值目标只能是变量名' });
+        return;
+      }
+      const num = isNum(st.value);
+      for (const tg of targets) { if (num) numericVars.add(tg.id); else numericVars.delete(tg.id); }
+      let js = value;
+      for (let k = targets.length - 1; k >= 0; k--) js = `${ident(targets[k].id)} = (${js})`;
+      W(js + ';');
+      return;
+    }
+    const t = targets[0];
+    if (t.type === 'name') { if (isNum(st.value)) numericVars.add(t.id); else numericVars.delete(t.id); W(`${ident(t.id)} = ${value};`); return; }
+    if (t.type === 'attr') { W(`${genE(t.obj, P_ATOM)}.${safeAttr(t.name)} = ${value};`); return; }
+    if (t.type === 'slice') {
+      const sl = (x: any) => (x ? genE(x, 0) : 'undefined');
+      W(`$setidx(${genE(t.obj, 0)}, { __pyslice: true, start: ${sl(t.lo)}, end: ${sl(t.hi)}, step: ${sl(t.step)} }, ${value});`);
+      return;
+    }
+    if (t.type === 'sub') {
+      if (t.idx && t.idx.type === 'slice') { errs.push({ line: st.line || 0, msg: '切片赋值暂不支持，请用循环逐项赋值' }); return; }
+      W(`$setidx(${genE(t.obj, 0)}, ${genSubIdx(t.idx)}, ${value});`);
+      return;
+    }
+    if (t.type === 'tuple') {
+      const allNum = st.value.type === 'tuple' && st.value.items.length === t.items.length && st.value.items.every((x: Node) => isNum(x));
+      for (const it of t.items) { if (it.type === 'name') { if (allNum) numericVars.add(it.id); else numericVars.delete(it.id); } }
+      const rhs = st.value.type === 'tuple' ? value : `$arr($iter(${value}))`;
+      W(`${destruct(t)} = ${rhs};`);
+      return;
+    }
+  }
+
+  function genWhile(st: Node) {
+    const flag = st.orelse.length ? `$brk${++uid}` : null;
+    if (flag) W(`let ${flag} = false;`);
+    W(`while ($bool(${genE(st.test, 0)})) {`);
+    const saved = brkFlag; brkFlag = flag;
+    ind++; genBody(st.body); ind--;
+    brkFlag = saved;
+    W('}');
+    if (flag) { W(`if (!${flag}) {`); ind++; genBody(st.orelse); ind--; W('}'); }
+  }
+
+  function genTry(st: Node) {
+    W('try {');
+    ind++; genBody(st.body); if (st.orelse.length) genBody(st.orelse); ind--;
+    if (st.handlers.length) {
+      const idn = ++uid;
+      W(`} catch ($e${idn}) {`);
+      ind++;
+      W(`const $x${idn} = $pyerr($e${idn});`);
+      st.handlers.forEach((h: any, i: number) => {
+        let cond = 'true';
+        if (h.types && !h.types.includes('Exception')) cond = `${JSON.stringify(h.types)}.includes($x${idn}.type)`;
+        W(i === 0 ? `if (${cond}) {` : `} else if (${cond}) {`);
+        ind++;
+        if (h.name) W(`const ${ident(h.name)} = $x${idn};`);
+        genBody(h.body);
+        ind--;
+      });
+      W(`} else { throw $e${idn}; }`);
+      ind--;
+    }
+    if (st.finalbody.length) {
+      W('} finally {');
+      ind++; genBody(st.finalbody); ind--;
+    }
+    W('}');
+  }
+
+  function genClass(st: Node) {
+    W(`$CLS[${JSON.stringify(st.name)}] = {`);
+    ind++;
+    W(`__base: ${st.base ? JSON.stringify(st.base) : 'null'},`);
+    const attrs = st.body.filter((x: any) => x.type === 'assign');
+    if (attrs.length) {
+      W('__attrs: {');
+      ind++;
+      for (const a of attrs) W(`${JSON.stringify((a.targets[0] as any).id)}: ${genE(a.value, 0)},`);
+      ind--;
+      W('},');
+    }
+    const savedCtx = classCtx;
+    classCtx = { base: st.base, selfP: null };
+    for (const m of st.body) { if (m.type === 'def') genMethodDef(m); }
+    classCtx = savedCtx;
+    ind--;
+    W('};');
+  }
+
+  function genMethodDef(m: Node) {
+    const st = m as any;
+    const key = st.name;
+    const ps = st.params.map((pp: any) => pp.def ? `${ident(pp.name)} = ${genE(pp.def, 0)}` : ident(pp.name));
+    if (st.star) ps.push(`...${ident(st.star)}`);
+    const hasYield = scanYield(st.body);
+    W(`${hasYield ? '*' : ''}${JSON.stringify(key)}(${ps.join(', ')}) {`);
+    ind++;
+    const addedU: string[] = [];
+    const pushU = (nm: string) => { if (!userBindings.has(nm)) { userBindings.add(nm); addedU.push(nm); } };
+    for (const pp of st.params) pushU(pp.name);
+    if (st.star) pushU(st.star);
+    const nl = collectNL(st.body);
+    const locals = [...collectLocals(st.body)].filter(n => !nl.has(n));
+    for (const nm of locals) pushU(nm);
+    if (locals.size) W(`let ${[...locals].map(ident).join(', ')};`);
+    classCtx = { base: (classCtx as any).base, selfP: st.params.length ? st.params[0].name : null };
+    const savedNum = [...numericVars];
+    numericVars.clear();
+    genBody(st.body);
+    numericVars.clear();
+    for (const nm of savedNum) numericVars.add(nm);
+    for (const nm of addedU) userBindings.delete(nm);
+    ind--;
+    W('},');
+  }
+
+  function genFor(st: Node) {
+    // range 优化：for i in range(...) → C 风格循环
+    const iter = st.iter;
+    const isRange = iter.type === 'call' && iter.fn.type === 'name' && iter.fn.id === 'range' && !defs.has('range') && !iter.kwargs.length && iter.args.length >= 1 && iter.args.length <= 3;
+    if (isRange && st.target.type === 'name') {
+      numericVars.add(st.target.id);
+      let flag: string | null = null;
+      let saved2: string | null = null;
+      if (st.orelse.length) { flag = `$brk${++uid}`; W(`let ${flag} = false;`); saved2 = brkFlag; brkFlag = flag; }
+      const args = iter.args;
+      const start = args.length >= 2 ? genE(args[0], 0) : '0';
+      const stop = genE(args.length >= 2 ? args[1] : args[0], 0);
+      const step = args.length >= 3 ? genE(args[2], 0) : '1';
+      const simple = (e: Node) => e.type === 'num' || e.type === 'name' || e.type === 'const';
+      const sid = args.length >= 2 && !simple(args[0]);
+      const eid = !simple(args.length >= 2 ? args[1] : args[0]);
+      const spd = args.length >= 3 && !simple(args[2]);
+      const n = ++uid;
+      const parts = [`${ident(st.target.id)} = ${sid ? `(${start})` : start}`];
+      if (eid) parts.push(`$e${n} = (${stop})`);
+      if (spd) parts.push(`$s${n} = (${step})`);
+      const eRef = eid ? `$e${n}` : `(${stop})`;
+      const sRef = spd ? `$s${n}` : `(${step})`;
+      W(`for (${parts.join(', ')}; ${sRef} > 0 ? ${ident(st.target.id)} < ${eRef} : ${ident(st.target.id)} > ${eRef}; ${ident(st.target.id)} += ${sRef}) {`);
+      ind++; genBody(st.body); ind--;
+      W('}');
+      brkFlag = saved2;
+      if (st.orelse.length) { W(`if (!${flag}) {`); ind++; genBody(st.orelse); ind--; W('}'); }
+      return;
+    }
+    const tgt = destruct(st.target);
+    const flag = st.orelse.length ? `$brk${++uid}` : null;
+    if (flag) W(`let ${flag} = false;`);
+    W(`for (${tgt} of $iter(${genE(iter, 0)})) {`);
+    const saved = brkFlag; brkFlag = flag;
+    ind++; genBody(st.body); ind--;
+    brkFlag = saved;
+    W('}');
+    if (flag) { W(`if (!${flag}) {`); ind++; genBody(st.orelse); ind--; W('}'); }
+  }
+
+  function genFunc(st: Node) {
+    const hasYield = scanYield(st.body);
+    const params = st.params.map((p: any) => p.def ? `${ident(p.name)} = ${genE(p.def, 0)}` : ident(p.name));
+    if (st.star) params.push(`...${ident(st.star)}`);
+    if (st.kwarg) params.push(`${ident(st.kwarg)} = {}`);
+    W(`function${hasYield ? '*' : ''} ${ident(st.name)}(${params.join(', ')}) {`);
+    ind++;
+    const addedU: string[] = [];
+    const pushU = (nm: string) => { if (!userBindings.has(nm)) { userBindings.add(nm); addedU.push(nm); } };
+    for (const p of st.params) pushU(p.name);
+    if (st.star) pushU(st.star);
+    const nl = collectNL(st.body);
+    const locals = [...collectLocals(st.body)].filter(n => !nl.has(n));
+    for (const nm of locals) pushU(nm);
+    if (locals.size) W(`let ${[...locals].map(ident).join(', ')};`);
+    const savedNum = [...numericVars];
+    numericVars.clear();
+    genBody(st.body);
+    numericVars.clear();
+    for (const nm of savedNum) numericVars.add(nm);
+    for (const nm of addedU) userBindings.delete(nm);
+    ind--;
+    W('}');
+    W(`$SIGS[${JSON.stringify(st.name)}] = [[${st.params.map((p: any) => JSON.stringify(p.name)).join(', ')}], ${st.kwarg ? JSON.stringify(st.kwarg) : 'null'}];`);
+  }
+
+  // 顶层
+  const importNames = new Set<string>();
+  for (const st0 of prog) {
+    if (st0.type === 'import') importNames.add(st0.asname || st0.module);
+    else if (st0.type === 'fromimport') for (const it0 of st0.names) importNames.add(it0.asname || it0.name);
+  }
+  const topLocals = collectLocals(prog);
+  for (const nm of importNames) topLocals.delete(nm);
+  for (const nm of topLocals) userBindings.add(nm);
+  if (topLocals.size) lines.push(`let ${[...topLocals].map(ident).join(', ')};`);
+  genBody(prog);
+
+  return { body: lines.join('\n'), defs };
+}
+
+export function transpile(src: string): TranspileResult {
+  const errs: Py2JsError[] = [];
+  const toks = lex(src, errs);
+  let prog: Node[] = [];
+  try { prog = createParser(toks, errs).program(); } catch (e) { if (!(e instanceof ParseBreak)) throw e; }
+  if (errs.length) return { js: '', body: '', errors: errs, imports: [] };
+  let body = '';
+  try { body = codegen(prog, errs).body; } catch (e) { errs.push({ line: 0, msg: '内部错误：' + (e as Error).message }); }
+  if (errs.length) return { js: '', body: '', errors: errs, imports: [] };
+  const imports: string[] = [];
+  for (const nd of prog) {
+    if (nd.type === 'import' || nd.type === 'fromimport') { if (!imports.includes(nd.module)) imports.push(nd.module); }
+  }
+  const js = 'return (() => {\n' + body + '\nreturn { out: $OUT.join("") };\n})()';
+  return { js, body, errors: errs, imports };
+}

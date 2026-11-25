@@ -35,6 +35,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     <button class="btn ghost demo" data-demo="comp">推导式与排序</button>
     <button class="btn ghost demo" data-demo="string">字符串处理</button>
     <button class="btn ghost demo" data-demo="oop">类与异常</button>
+    <button class="btn ghost demo" data-demo="numpy">NumPy 数组</button>
     <button class="btn ghost demo" data-demo="bench">性能对比</button>
     <span class="sep"></span>
     <button class="btn ghost" id="btnClear">清空输出</button>
@@ -46,7 +47,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
   </div>
 
   <div class="intro notes">
-    <p class="muted"><b>支持范围</b>：变量 / 算术运算（含 Python 语义的整除与取模）/ 比较链 / 逻辑短路 / if-elif-else / while / for-in（range 自动生成计数循环）/ 函数与递归（默认参数、*args、关键字实参、**kwargs）/ lambda / f-string（含格式说明符 <code>&#123;x:.2f&#125;</code>）/ 切片与负索引 / 列表·字典·集合·元组 / 推导式 / try-except-else-finally 异常处理 / while-else 与 for-else / 海象运算符 <code>:=</code> / del / global / nonlocal / yield 生成器 / 类（__init__、方法与 self、单继承、super()、__str__、isinstance）/ 常用内建与方法。import 第三方库、async-await、with 暂不支持——遇到不支持语法会给出明确报错。</p>
+    <p class="muted"><b>支持范围</b>：变量 / 算术运算（含 Python 语义的整除与取模）/ 比较链 / 逻辑短路 / if-elif-else / while / for-in（range 自动生成计数循环）/ 函数与递归（默认参数、*args、关键字实参、**kwargs）/ lambda / f-string（含格式说明符 <code>&#123;x:.2f&#125;</code>）/ 切片与负索引 / 列表·字典·集合·元组 / 推导式 / try-except-else-finally 异常处理 / while-else 与 for-else / 海象运算符 <code>:=</code> / del / global / nonlocal / yield 生成器 / 类（__init__、方法与 self、单继承、super()、__str__、isinstance）/ 常用内建与方法 / <b>import numpy as np</b>（数组创建与 reshape / 广播与矩阵乘 / 切片·花式索引·布尔掩码 / 聚合与 axis / 常用 ufunc / sort·argsort·unique / linalg 的 norm·det·inv / random）。其余第三方库、async-await、with 暂不支持——遇到不支持语法会给出明确报错。</p>
+    <p class="muted"><b>NumPy 已知限制</b>：纯 JS 无法区分整数与浮点字面量，<code>np.array([1.0, 2, 3])</code> 会推断为 int64（需含真小数如 1.5，或用 <code>astype(float)</code>）；浮点标量打印不显示 <code>.0</code>（如 <code>np.mean</code> 标量输出 <code>2</code>，数组形式输出 <code>2.</code>）；浮点打印按 8 位小数格式化并去尾零，与 NumPy 默认显示一致；<code>np.random</code> 用内置 LCG 实现，可复现但序列与 CPython NumPy 不同；<code>@</code> 支持 1D/2D 组合，更高维广播矩阵乘暂不支持；<code>np.where</code> 单参数形式仅支持一维；高于二维的聚合按展平顺序处理。</p>
     <p class="muted"><b>已知语义差异</b>：真除法结果为整数值时不显示 <code>.0</code>（如 <code>print(170 / 2)</code> 输出 <code>85</code>）；类实例未定义 <code>__str__</code> 时打印 <code>&lt;类名 对象&gt;</code>；个别二进制浮点边界值上 <code>round</code> 与 CPython 可能相差 ±ulp。</p>
   </div>
 </BaseLayout>
@@ -226,7 +228,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 </style>
 
 <script>
-  import { transpile, RUNTIME } from '../../scripts/py2js';
+  import { transpile, RUNTIME, createNumpy } from '../../scripts/py2js';
 
   const codeEl = document.getElementById('code') as HTMLTextAreaElement;
   const pyHl = document.getElementById('pyHl') as HTMLElement;
@@ -377,7 +379,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     if (!r) return;
     const t0 = performance.now();
     try {
-      const res = new Function(RUNTIME + '\n' + r.js)() as { out: string };
+      const needNp = r.imports.includes('numpy');
+      const res = new Function('$npmod', '$pyin', RUNTIME + '\n' + r.js)(needNp ? createNumpy() : undefined, null) as { out: string };
       const tMs = performance.now() - t0;
       const text = res && typeof res.out === 'string' ? res.out : '';
       if (text.length) text.split('\n').forEach((l) => addLine(l, 'ok'));
@@ -512,6 +515,37 @@ def make_profile(name, **extra):
 print(make_profile("心屿", hobby="码字", city="线上"))
 
 print(f"[{3.14159:.2f}]", f"[{1234567:,}]", f"[{'hi':^8}]")`,
+    numpy: `# NumPy 子集：纯 JS 实现，无需 WASM
+import numpy as np
+
+a = np.array([[1, 2], [3, 4]])
+b = np.array([[5, 6], [7, 8]])
+print("矩阵乘法 a @ b:")
+print(a @ b)
+print("转置:", a.T.tolist())
+print("广播求和:")
+print(a + np.array([10, 20]))
+
+xs = np.linspace(0, 1, 5)
+print("linspace:", xs)
+print("平方:", np.power(xs, 2), "开方:", np.sqrt(xs))
+
+scores = np.array([[88, 92, 79], [95, 67, 81]])
+print("各科平均:", scores.mean(axis=0))
+print("最高分:", scores.max(), "argmax:", scores.argmax())
+print("按列排序:")
+print(np.sort(scores, axis=0))
+
+mask = scores > 80
+print("高分个数:", mask.sum())
+print("clip:", np.clip(scores, 70, 90))
+
+m = np.array([[2, 0], [0, 4]])
+print("逆矩阵:")
+print(np.linalg.inv(m))
+
+print("cumsum:", np.cumsum(np.array([1, 2, 3, 4])))
+print("unique:", np.unique(np.array([3, 1, 2, 3, 1])))`,
     bench: `# 性能感受：转译产物由 V8 原生执行
 # 对比 Pyodide（WASM 解释）通常快 10 倍以上
 import_time_hint = "见输出面板的运行耗时"
