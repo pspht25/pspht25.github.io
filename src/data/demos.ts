@@ -4,9 +4,11 @@ export interface DemoCard {
   title: string;
   description: string;
   emoji: string;
-  /** public/demos/ 下的单文件名（自包含 HTML，可整页下载） */
+  /** public/demos/ 下的页面入口：单文件演示是 .html 文件名，目录型演示是 <dir>/index.html */
   file: string;
   tags: string[];
+  /** 目录型演示可选：public/demos/ 下的 zip 导出包文件名；有值时详情页下载按钮改为导出 zip */
+  zip?: string;
   /** false 时在演示集中显示为灰色待建卡片 */
   ready: boolean;
 }
@@ -38,6 +40,16 @@ export const demos: DemoCard[] = [
     emoji: '🎨',
     file: 'bilateral-lab.html',
     tags: ['ISP', '图像处理', '科普'],
+    ready: true,
+  },
+  {
+    slug: 'gray-snr-lab',
+    title: '环形灰阶卡：SNR 是怎么测出来的',
+    description: 'Imatest 式相机 IQ 测量演绎：合成灰阶照片、抓取 patch、画 OECF、算 SNR 与那个 0.13、多帧分离两种噪声、外推动态范围，附 py2js 全流水线实操',
+    emoji: '🎯',
+    file: 'gray-snr-lab/index.html',
+    zip: 'gray-snr-lab.zip',
+    tags: ['ISP', '相机IQ', 'Imatest', '科普'],
     ready: true,
   },
 ];

@@ -6,8 +6,8 @@ import { demos } from '../../data/demos';
 <BaseLayout title="演示集">
   <h1>演示集</h1>
   <p class="page-desc">
-    可交互的科学演示，每个演示都是自包含的单文件页面，可整页下载带走。演示注册表在
-    <code>src/data/demos.ts</code>：加一个新演示 = 新建一个 HTML 文件 + 一行注册。
+    可交互的科学演示，每个演示都自带全部代码与依赖、互相独立，单文件演示可整页下载，目录型演示可导出 zip 带走。演示注册表在
+    <code>src/data/demos.ts</code>：加一个新演示 = 新建页面文件 + 一行注册。
   </p>
   <div class="card-grid">
     {demos.map((demo) =>

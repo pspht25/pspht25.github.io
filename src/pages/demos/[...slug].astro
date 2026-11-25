@@ -16,7 +16,11 @@ const { demo } = Astro.props;
   <p class="page-desc">{demo.description}</p>
   <div class="demo-toolbar">
     <a class="demo-btn" href={`/demos/${demo.file}`} target="_blank" rel="noopener">⛶ 全屏打开</a>
-    <a class="demo-btn" href={`/demos/${demo.file}`} download={demo.file}>⬇️ 下载单文件</a>
+    {demo.zip ? (
+      <a class="demo-btn" href={`/demos/${demo.zip}`} download={demo.zip}>⬇️ 导出下载（zip）</a>
+    ) : (
+      <a class="demo-btn" href={`/demos/${demo.file}`} download={demo.file}>⬇️ 下载单文件</a>
+    )}
     <span class="demo-note">整站加密保护中：在线查看与下载的文件均需博客密码打开</span>
   </div>
   <div class="demo-frame-wrap">

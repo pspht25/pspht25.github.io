@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>环形灰阶卡：SNR 是怎么测出来的 · 相机 IQ 测量演绎</title>
+<meta name="description" content="Imatest 式相机图像质量测量演绎：环形灰阶卡为什么长那样、patch ROI 怎么抓、OECF 与 SNR 怎么算、0.13 从哪来、多帧怎么分离时间噪声与固定模式噪声，附 py2js 全流水线实操。">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="tocbar"><div class="in">
+  <a class="back" id="backDemo" href="/demos/">← 演示集</a>
+  <a href="#s1">① 图卡</a><a href="#s2">② 成像</a><a href="#s3">③ 抓取</a><a href="#s4">④ OECF</a><a href="#s5">⑤ SNR</a><a href="#s6">⑥ 多帧</a><a href="#s7">⑦ 动态范围</a><a href="#s8">⑧ 实操</a><a href="#refs">参考</a>
+</div></nav>
+
+<div class="wrap">
+<header class="hero">
+  <span class="emoji">🎯</span>
+  <h1>环形灰阶卡：SNR 是怎么测出来的</h1>
+  <p class="sub">Imatest 式相机 IQ 测量演绎：把「已知亮度」摆进场景，从相机的输出数字反推它的性格——灰阶怎么抓、OECF 怎么画、信噪比怎么算、那个神秘的 <b>0.13</b> 从哪来、多帧怎么把两种噪声分开。本页与其他演示页完全独立。</p>
+  <div class="badges"><span class="badge">ISO 14524 OECF</span><span class="badge">ISO 15739 Noise</span><span class="badge">Imatest Stepchart / Color-Tone</span><span class="badge">py2js 全流水线实操</span></div>
+</header>
+
+<!-- ============ ① ============ -->
+<section id="s1">
+  <h2>① 为什么拍一张灰阶卡</h2>
+  <p>相机是个黑盒：场景亮度进去，数字（DN, digital number 0~255）出来。想知道它的性格，最直接的办法是<b>喂给它一组亮度已知的输入</b>，再看它吐出什么。Imatest 生态的做法就是把一系列反射率（或透射率）精确已知的灰块 <b>patch</b> 印在一张卡上，拍下来，逐块统计。</p>
+  <div class="formula" data-tex="d=\log_{10}\dfrac{1}{R},\quad R=10^{-d}"><span class="fallback-sub">d</span> = log₁₀(1/R)，R = 10<sup class="fallback-sup">−d</sup></div>
+  <p class="note">密度 <b>d</b> 每加 1.0，反射率 ÷10，光量直降 <b>20dB / 3.32 档</b>。一张 80:1 的反射卡，密度从 0.1 排到 2.0，正好横跨日常场景的中间 6 档多。</p>
+  <div class="card">
+    <h3>🗂️ 图卡家族（Imatest 官方文档整理）</h3>
+    <table class="patch-table">
+      <tr><th>图卡</th><th>排布</th><th>patch 数</th><th>密度范围</th><th>典型用途</th></tr>
+      <tr><td>20-patch circular OECF</td><td>圆环</td><td>20</td><td>随对比度变体 20:1 ~ 12600:1</td><td>ISO 14524 OECF——eSFR ISO 卡中心就是它</td></tr>
+      <tr><td><b>ISO 15739 noise target</b> <span class="tag">本页主角</span></td><td>近椭圆：12 外圈 + 3 中心</td><td>15</td><td>0.1 ~ 2.0</td><td>大面积噪声 / SNR / 动态范围</td></tr>
+      <tr><td>36-patch DR chart</td><td>近圆形</td><td>36</td><td>0.03 ~ 6（透射）</td><td>高动态范围，约 120dB / 40 档</td></tr>
+    </table>
+    <p class="note">同一 20-patch 几何有五种对比度变体：低 20:1、标准 80:1、160:1（eSFR ISO 用）、高 1000:1，以及 Image Engineering TE241 透射卡（12600:1，密度到 4.1）。TE264 与其几何完全一致。</p>
+  </div>
+  <div class="grid3">
+    <div class="card"><h3>🎯 圆环排布：防渐晕</h3><p>镜头渐晕从中心向外变暗。<b>一条直线排 patch，同密度的块会因位置不同而读数不同</b>；环形排列让同环 patch 离中心等距，渐晕变成环内对称的偏置——建模得掉、去除得掉。36-patch DR 卡官方说法就是「近乎圆形排列使渐晕影响最小」。</p></div>
+    <div class="card"><h3>📏 patch 大：样本多</h3><p>噪声是统计量，样本越多估计越稳。噪声卡的 patch 特意做得比分辨率卡大——单帧内就有几百个样本，配合标准要求的 <b>≥8 帧</b>，σ 才收敛。</p></div>
+    <div class="card"><h3>⚖️ 中性灰背景</h3><p>整卡背景是中性灰（输出约 110~130 / 8bit sRGB）。自动曝光和自动白平衡不会在卡上「跑偏」，不同相机、不同批次拍的读数才可比。</p></div>
+  </div>
+</section>
+
+<!-- ============ ② ============ -->
+<section id="s2">
+  <h2>② 亲手合成一张「照片」</h2>
+  <p>真实测量要真的拍卡；我们把相机塞进浏览器：15 个 patch 的场景亮度已知（就按 ISO 15739 noise target 的密度表），模拟「传感器 + ISP」生成 8bit 灰阶照片。后面所有测量都对着这张照片做——这就是 Imatest 分析软件眼里看到的原始输入。</p>
+  <div class="formula" data-tex="S=L\cdot E\cdot V,\quad \sigma_{\rm t}=\sqrt{S\cdot c+\sigma_r^2},\quad {\rm DN}=255\cdot\big(S(1+{\rm PRNU}\cdot g)+n\big)^{1/\gamma}"><span class="fallback-sub">DN</span> = 255 · ( S·(1+PRNU·g) + n )<sup class="fallback-sup">1/γ</sup>，其中 n ~ N(0, √(S·c+σr²))</div>
+  <div class="grid2">
+    <div><canvas id="shotCv" class="view" width="720" height="540"></canvas>
+      <p class="note" id="shotNote">15 个 patch = 12 外圈（近椭圆）+ 3 中心行，密度 0.1 → 2.0；背景密度 0.62。悬停可看 patch 读数。</p></div>
+    <div>
+      <label>曝光 / 照度 E <span class="val" id="lbExpo"></span></label>
+      <input type="range" id="knExpo" min="0.4" max="1.6" step="0.01" value="1.15">
+      <label>读出噪声 σ<sub>r</sub> <span class="val" id="lbRead"></span></label>
+      <input type="range" id="knRead" min="0.001" max="0.01" step="0.001" value="0.003">
+      <label>像素响应不均匀 PRNU <span class="val" id="lbPrnu"></span></label>
+      <input type="range" id="knPrnu" min="0" max="4" step="0.5" value="2">
+      <label>Gamma γ <span class="val" id="lbGamma"></span></label>
+      <input type="range" id="knGamma" min="1" max="3" step="0.05" value="2.2">
+      <label>渐晕强度 <span class="val" id="lbVign"></span></label>
+      <input type="range" id="knVign" min="0" max="0.5" step="0.05" value="0.25">
+      <div class="btns"><button id="btnReshoot">🔄 重拍一帧（换噪声种子）</button></div>
+      <p class="note">数字是模拟的，物理是真的：散粒噪声 √(S·c)、读出噪声 σ<sub>r</sub>、逐像素固定增益差（PRNU）、gamma 编码、镜头渐晕，一个不少。曝光 E 调太大，亮端 patch 会顶到 255 饱和——这正是测量时要避免的。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ③ ============ -->
+<section id="s3">
+  <h2>③ 抓取 patch：ROI 与 fill factor 陷阱</h2>
+  <p>Imatest 的分析流程：选卡型 → 粗裁剪 → 自动定位或微调每个 patch 的 ROI → 用 <b>fill factor</b> 控制采样框占 patch 的比例。fill 太大，采样框会碰到 patch 边缘、混进背景像素，σ 直接虚高；fill 太小，样本变少、σ 估计抖动。Imatest 文档的原话：<b>fill factor 高于 0.65 不再推荐</b>，因为采样区可能太贴边。</p>
+  <canvas id="roiCv" class="chart" width="720" height="300"></canvas>
+  <label>fill factor <span class="val" id="lbFill"></span>（推荐 ≤ 0.65）</label>
+  <input type="range" id="knFill" min="0.4" max="0.98" step="0.02" value="0.65">
+  <div class="readout">
+    <div class="ro"><div class="k">采样数（12×12 网格）</div><div class="v" id="roFillN">144</div></div>
+    <div class="ro"><div class="k">patch 均值（DN）</div><div class="v" id="roFillMean">—</div></div>
+    <div class="ro"><div class="k">patch σ（线性域）</div><div class="v" id="roFillSd">—</div></div>
+    <div class="ro"><div class="k">SNR</div><div class="v" id="roFillSnr">—</div></div>
+  </div>
+  <p class="note" id="roiWarn">点左边缩略图可以换 patch；右图红框是当前 fill 的采样框，绿框是 patch 边界。</p>
+  <div class="callout"><b>为什么边缘这么毒？</b>patch 印刷有 1~2px 的软过渡带（抗锯齿 + 墨水渗透），加上噪声本身会让边缘像素跨过边界。混入 3~5% 的异色像素，σ 的 rms 会被这些离群值显著拉高——SNR 被低估，全卡数据作废。所以宁小勿贴边。</div>
+</section>
+
+<!-- ============ ④ ============ -->
+<section id="s4">
+  <h2>④ OECF：相机的「亮度 → 数字」指纹</h2>
+  <p>把每个 patch 的已知亮度（x 轴，log₁₀ L）和实测 DN（y 轴）画出来，就是 <b>OECF（光电转换函数）</b>——ISO 14524 的主角，相机的色调指纹。理想 gamma 相机的理论曲线：</p>
+  <div class="formula" data-tex="{\rm DN}(L)=255\cdot(L\cdot E)^{1/\gamma}"><span class="fallback-sub">DN</span>(L) = 255 · (L·E)<sup class="fallback-sup">1/γ</sup></div>
+  <canvas id="oecfCv" class="chart" width="720" height="320"></canvas>
+  <div class="readout">
+    <div class="ro"><div class="k">设定 γ</div><div class="v" id="roSetGamma">2.20</div></div>
+    <div class="ro"><div class="k">实测拟合 γ（log-log 回归）</div><div class="v" id="roFitGamma">—</div></div>
+    <div class="ro"><div class="k">饱和 patch 数</div><div class="v" id="roClip">—</div></div>
+  </div>
+  <div class="callout"><b>线性化</b>：ISO 15739 的噪声全部在「输入参考域」计算——先把 DN 经逆 OECF 变回线性亮度（linearized from camera output），再求均值和 rms。下面 ⑤⑥⑧ 三节都严格走这一步。</div>
+</section>
+
+<!-- ============ ⑤ ============ -->
+<section id="s5">
+  <h2>⑤ SNR 曲线与那个「0.13」</h2>
+  <p>每个 patch：信号 = 线性域均值，噪声 = 去低频后的 rms，SNR = 信号/噪声。15 个点连成 SNR–亮度曲线。但报告里只需要<b>一个数</b>——在哪报？ISO 15739 的三步法：</p>
+  <div class="grid3">
+    <div class="card"><h3>1️⃣ 提取 L<sub>ref</sub></h3><p>使三通道任一达到 <b>DN=245</b> 的最低场景亮度（245 是 8bit sRGB 的白裁剪参考）。</p></div>
+    <div class="card"><h3>2️⃣ 计算 L<sub>SNR</sub></h3><p><span class="formula" data-tex="L_{\rm SNR}=0.13\times L_{\rm ref}"><span class="fallback-sub">L</span><sub class="fallback-sub">SNR</sub> = 0.13 × L<sub>ref</sub></span><br><b>0.13 的由来</b>：18% 灰卡 + 相机给高光留 140% 余量 → 0.18 / 1.4 ≈ 0.13。报告的就是「典型中间调」处的信噪比。</p></div>
+    <div class="card"><h3>3️⃣ 曲线插值</h3><p>在 SNR–亮度曲线上，按 log-log 插值取 L<sub>SNR</sub> 处的值，换算 <span class="formula" data-tex="SNR_{\rm dB}=20\log_{10}(S/N)"><span class="fallback-sub">SNR</span><sub class="fallback-sub">dB</sub> = 20·log₁₀(S/N)</span></p></div>
+  </div>
+  <div class="btns"><button class="on" id="btnLF">🔘 低频去除（ISO 15739 Annex C）：开</button></div>
+  <p class="note">渐晕开着时试试关掉它：patch 内亮度自带梯度，直接求 rms 会把「大尺度明暗」误当噪声——σ 虚高、SNR 偏低。标准附录 C 专门规定先去掉低频起伏再算噪声（2023 版从建议升级为强制）。</p>
+  <canvas id="snrCv" class="chart" width="720" height="320"></canvas>
+  <div class="readout">
+    <div class="ro"><div class="k">L<sub>ref</sub>（DN=245 处）</div><div class="v" id="roLref">—</div></div>
+    <div class="ro"><div class="k">L<sub>SNR</sub> = 0.13·L<sub>ref</sub></div><div class="v" id="roLsnr">—</div></div>
+    <div class="ro"><div class="k">报告值 SNR @ L<sub>SNR</sub></div><div class="v ok" id="roSnr13">—</div></div>
+    <div class="ro"><div class="k">换算 dB</div><div class="v ok" id="roSnr13dB">—</div></div>
+    <div class="ro"><div class="k">峰值 SNR（最亮 patch）</div><div class="v" id="roPeak">—</div></div>
+  </div>
+</section>
+
+<!-- ============ ⑥ ============ -->
+<section id="s6">
+  <h2>⑥ 多帧分离：时间噪声 vs 固定模式噪声</h2>
+  <div class="grid2">
+    <div class="card"><h3>⏱️ 时间噪声（Temporal）</h3><p>每帧都不同：散粒噪声、读出噪声。同一 patch 的<b>帧间均值波动</b>就是它。多帧平均的 √N 收益只对它有效。</p></div>
+    <div class="card"><h3>🧱 空间噪声（Spatial / FPN）</h3><p>每帧都一样：像素间的固定增益差（PRNU）。拍 N 帧再平均，平均图里 patch 内<b>仍在的</b>波动就是它——平均不掉，只能标定。</p></div>
+  </div>
+  <p>拍 N 帧：帧间波动 → 时间噪声 σ<sub>t</sub>；N 帧平均图内的像素波动 → 空间噪声 σ<sub>s</sub>；且 <span class="formula" data-tex="\sigma_{\rm total}^2=\sigma_{\rm t}^2+\sigma_{\rm s}^2"><span class="fallback-sub">σ</span><sub class="fallback-sub">total</sub>² = σ<sub class="fallback-sub">t</sub>² + σ<sub class="fallback-sub">s</sub>²</span>。ISO 15739 要求 <b>≥8 帧</b>才能可靠分离。</p>
+  <div class="btns" id="btnNRow"><span class="tag" style="align-self:center">帧数 N：</span>
+    <button class="nbtn" data-n="1">1</button><button class="nbtn" data-n="2">2</button><button class="nbtn" data-n="4">4</button><button class="nbtn on" data-n="8">8</button><button class="nbtn" data-n="16">16</button><button class="nbtn" data-n="32">32</button>
+  </div>
+  <canvas id="multiCv" class="chart" width="720" height="320"></canvas>
+  <div class="grid2" style="margin-top:12px">
+    <div class="card" style="text-align:center"><canvas id="avgA" class="view" width="120" height="120" style="width:150px"></canvas><p class="note" id="avgLabelA">单帧（N=1）· patch d=0.30</p></div>
+    <div class="card" style="text-align:center"><canvas id="avgB" class="view" width="120" height="120" style="width:150px"></canvas><p class="note" id="avgLabelB">N 帧平均 · 同一 patch</p></div>
+  </div>
+  <div class="readout">
+    <div class="ro"><div class="k">平均降噪实测增益</div><div class="v" id="roGain">—</div></div>
+    <div class="ro"><div class="k">理论增益（仅时间噪声时 √N）</div><div class="v" id="roGainTh">—</div></div>
+  </div>
+  <p class="note">有 PRNU 时实测增益 <b>低于</b> √N——因为固定模式噪声平均不掉，地板卡在那里。这解释了为什么长曝光的天文摄影还要拍暗场、平场：那些是标定 FPN 的专用卡「帧」。</p>
+</section>
+
+<!-- ============ ⑦ ============ -->
+<section id="s7">
+  <h2>⑦ 动态范围：曲线的两个尽头</h2>
+  <p><span class="formula" data-tex="DR=L_{\rm sat}/L_{\rm min}"><span class="fallback-sub">DR</span> = L<sub class="fallback-sub">sat</sub> / L<sub class="fallback-sub">min</sub></span>：上端是还能测的极限（DN 顶格对应的场景亮度），下端是 SNR 跌到 <b>1（0dB）</b>的亮度。低光端噪声恒定（读出噪声地板），SNR ∝ L 成直线——ISO 15739 允许把这根直线外推到 0dB 找 L<sub>min</sub>（标准记法 L<sub>min</sub> = σ(d=2)/g(d=2)）。</p>
+  <canvas id="drCv" class="chart" width="720" height="320"></canvas>
+  <div class="readout">
+    <div class="ro"><div class="k">L<sub>sat</sub></div><div class="v" id="roLsat">—</div></div>
+    <div class="ro"><div class="k">L<sub>min</sub>（SNR=1）</div><div class="v" id="roLmin">—</div></div>
+    <div class="ro"><div class="k">动态范围</div><div class="v ok" id="roDrdB">—</div></div>
+    <div class="ro"><div class="k">换算档数（stops）</div><div class="v" id="roDrStops">—</div></div>
+  </div>
+  <div class="card">
+    <h3>🪜 卡够不够用？</h3>
+    <table class="patch-table">
+      <tr><th>卡</th><th>最暗密度</th><th>可覆盖</th><th>适用</th></tr>
+      <tr><td>反射 80:1（d≤2.0）</td><td>2.0</td><td>≈ 6.6 档</td><td>日常 QC、手机主摄足够</td></tr>
+      <tr><td>透射 TE241 / 1000:1（d≤3.1）</td><td>3.1</td><td>≈ 10.3 档</td><td>更高 DR 的传感器</td></tr>
+      <tr><td>36-patch 透射 DR 卡（d≤6）</td><td>6.0</td><td>≈ 40 档（120dB）</td><td>HDR / 车载 / 安防，需灯箱 + 参考文件</td></tr>
+    </table>
+    <p class="note">本页模拟相机（σ<sub>r</sub>=0.003、c=0.002）约 47dB / 7.9 档——反射卡刚好够到最暗 patch。把读出噪声滑块调大试试：L<sub>min</sub> 上移，反射卡就「测不到底」了。</p>
+  </div>
+</section>
+
+<!-- ============ ⑧ ============ -->
+<section id="s8">
+  <h2>⑧ py2js 实操：整条测量流水线都是你的</h2>
+  <p>前八节你在<b>看</b>测量，这一节你来<b>跑</b>它：下面是真实的 Python 代码——从 patch 的 DN 样本出发，线性化、（可选）去低频、算每块均值/σ/SNR、提取 L<sub>ref</sub>、按 0.13 定报告点、log-log 插值、外推动态范围——一条龙。由本站自研的 py2js 转译器在你的浏览器里<b>现场编译执行</b>，没有后端。改公式（K13、LF、γ……）立刻看到报告值怎么变。</p>
+  <div class="btns">
+    <button class="act on" id="btnPgRun">▶ 运行（py2js 浏览器内编译）</button>
+    <button class="act" id="btnPgReset">↺ 还原代码</button>
+    <span class="tag" style="align-self:center">模板：</span>
+    <button class="tpl" data-tpl="base">基准</button>
+    <button class="tpl" data-tpl="lf0">关低频去除</button>
+    <button class="tpl" data-tpl="k13">K13=0.18</button>
+    <button class="tpl" data-tpl="g10">γ=1.0（线性相机）</button>
+  </div>
+  <textarea id="pgCode" class="pyed" spellcheck="false" rows="30"></textarea>
+  <pre id="pgOut" class="pyout">（点击「▶ 运行」——首次会加载转译器，稍等片刻）</pre>
+  <canvas id="pgCv" class="chart" width="720" height="300"></canvas>
+  <p class="note">左侧旋钮改动会同步代码顶部的 EXPO / GAMMA 行；PATCHES_DN 与 L_LIST 是 JS 注入的实测数据（当前帧、fill=0.65 的 12×12 采样）。Python 端是完全独立的流水线——你在代码里改 γ 不会影响上面 canvas 的模拟相机，只会改变这份「分析软件」的结论。</p>
+</section>
+
+<!-- ============ 参考 ============ -->
+<section id="refs">
+  <h2>参考与来源</h2>
+  <ul class="refs">
+    <li>Imatest — <i>Grayscale charts for Color/Tone and Stepchart</i>（patch 家族、fill factor 建议、patch order）<a href="https://www.imatest.com/docs/stepchart_ai_iso/" target="_blank" rel="noopener">imatest.com/docs/stepchart_ai_iso</a></li>
+    <li>Imatest — <i>Color/Tone & eSFR ISO Noise</i>（ISO 15739 SNR、visual noise 实现）</li>
+    <li>ISO 15739:2023 <i>Photography — Electronic still-picture imaging — Noise measurements</i>（第 4 版，ISO/TC 42）<a href="https://www.iso.org/obp/ui/#iso:std:iso:15739:en" target="_blank" rel="noopener">iso.org/obp</a></li>
+    <li>Image Engineering — <i>图像噪声：类型、成因与测量</i>（L<sub>ref</sub>/L<sub>SNR</sub> 方法、0.13 由来、TE269/TE270X）<a href="https://www.image-engineering.de/zh/noise" target="_blank" rel="noopener">image-engineering.de/zh/noise</a></li>
+    <li>ISO 14524 <i>OECF 测量方法</i>（12-patch 圆形 OECF 几何与密度表）</li>
+  </ul>
+  <p class="note">本页的相机模型为教学简化：纯 gamma 编码（非 sRGB 分段）、噪声参数取教学量级、patch 几何按 ISO 15739 noise target 的官方描述示意。所有计算均在本页独立完成，不依赖其他演示页。</p>
+</section>
+
+<footer>环形灰阶卡：SNR 是怎么测出来的 · 心屿演示集 · 页面文件分块存放（html/css/js），「导出下载」得到 zip，含离线可用的 py2js 副本</footer>
+<button class="to-top" id="toTop" title="回到顶部">↑</button>
+</div>
+
+<script src="sim.js"></script>
+<script src="charts.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
