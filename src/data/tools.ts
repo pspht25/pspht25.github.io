@@ -38,6 +38,13 @@ export const tools: ToolCard[] = [
     ready: true,
   },
   {
+    title: 'Python IDE',
+    description: 'IDE 风格的本地编辑器：打开本地文件夹作工作目录（纯本地、不上云、缓存可清除），多标签语法高亮，py2js 毫秒级转译执行',
+    path: '/tools/py-ide/',
+    emoji: '🗂️',
+    ready: true,
+  },
+  {
     title: '正则测试器',
     description: '实时匹配高亮与分组捕获',
     path: '/tools/regex/',
