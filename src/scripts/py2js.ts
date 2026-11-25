@@ -24,14 +24,21 @@ const $bool = (x) => x === null || x === undefined ? false
   : true;
 const $not = (x) => !$bool(x);
 const $type = (x) => x === null || x === undefined ? 'NoneType'
+  : x && x.__pyexc ? x.type
   : typeof x === 'boolean' ? 'bool'
   : typeof x === 'number' ? (Number.isInteger(x) ? 'int' : 'float')
   : typeof x === 'string' ? 'str'
   : Array.isArray(x) ? 'list'
   : x instanceof Set ? 'set'
   : typeof x === 'function' ? 'function'
-  : typeof x === 'object' ? 'dict' : 'unknown';
+  : typeof x === 'object' ? (x.__cls ? x.__cls : 'dict') : 'unknown';
 const $str = (x) => {
+  if (x && x.__pyexc) return x.msg;
+  if (x && typeof x === 'object' && x.__cls) {
+    let c = x.__cls;
+    while (c) { const t = $CLS[c]; if (t && t.__str__) return $str(t.__str__(x)); c = t && t.__base; }
+    return '<' + x.__cls + ' 对象>';
+  }
   if (x === null || x === undefined) return 'None';
   if (typeof x === 'boolean') return x ? 'True' : 'False';
   if (typeof x === 'number') return Number.isNaN(x) ? 'nan' : String(x);
@@ -39,6 +46,12 @@ const $str = (x) => {
   return $repr(x);
 };
 const $repr = (x) => {
+  if (x && x.__pyexc) return x.type + "('" + x.msg + "')";
+  if (x && typeof x === 'object' && x.__cls) {
+    let c = x.__cls;
+    while (c) { const t = $CLS[c]; if (t && t.__repr__) return $repr(t.__repr__(x)); if (t && t.__str__) return $repr(t.__str__(x)); c = t && t.__base; }
+    return '<' + x.__cls + ' 对象>';
+  }
   if (x === null || x === undefined) return 'None';
   if (typeof x === 'boolean') return x ? 'True' : 'False';
   if (typeof x === 'number') return Number.isNaN(x) ? 'nan' : String(x);
@@ -51,6 +64,7 @@ const $repr = (x) => {
 };
 const $eq = (a, b) => {
   if (a === b) return true;
+  if ((a && a.__cls) || (b && b.__cls) || (a && a.__pyexc) || (b && b.__pyexc)) return false;
   if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return a === b;
   if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((v, i) => $eq(v, b[i]));
   if (a instanceof Set && b instanceof Set) return a.size === b.size && Array.from(a).every(v => b.has(v));
@@ -89,6 +103,7 @@ const $len = (x) => {
 };
 const $iter = (x) => {
   if (Array.isArray(x) || typeof x === 'string' || x instanceof Set) return x;
+  if (x && typeof x === 'object' && typeof x[Symbol.iterator] === 'function') return x;
   if (x && typeof x === 'object') return Object.keys(x);
   throw new TypeError('对象不可迭代（' + $type(x) + '）');
 };
@@ -130,7 +145,7 @@ const $int = (x, base) => {
   if (base !== undefined && typeof x === 'string') return parseInt(x, base);
   if (typeof x === 'boolean') return x ? 1 : 0;
   if (typeof x === 'number') { if (Number.isNaN(x)) throw new Error('ValueError: int() 参数无效'); return Math.trunc(x); }
-  if (typeof x === 'string') { const v = Number(x.trim()); if (Number.isNaN(v)) throw new Error("ValueError: int('" + x + "') 无效字面量"); return Math.trunc(v); }
+  if (typeof x === 'string') { const t = x.trim(); if (!/^[+-]?\d+$/.test(t)) throw new Error("ValueError: invalid literal for int(): '" + x + "'"); return parseInt(t, 10); }
   throw new TypeError('int() 参数类型不支持');
 };
 const $float = (x) => {
@@ -252,7 +267,115 @@ const $union = (a, b) => new Set([...a, ...$arr(b)]);
 const $intersection = (a, b) => new Set([...a].filter(v => b.has(v)));
 const $difference = (a, b) => new Set([...a].filter(v => !b.has(v)));
 const $sremove = (s, v) => { if (!s.delete(v)) throw new Error('KeyError: ' + $repr(v)); return s; };
-const $getattr = (o, k) => { if (o === null || o === undefined) throw new Error("AttributeError: '" + $type(o) + "' 对象没有属性 '" + k + "'"); return o[k]; };
+const $ga = (o, k) => {
+  if (o === null || o === undefined) throw new Error("AttributeError: '" + $type(o) + "' 对象没有属性 '" + k + "'");
+  if (typeof o === 'object' && o.__cls) {
+    if (k in o) return o[k];
+    let c = o.__cls;
+    while (c) { const t = $CLS[c]; if (t && t.__attrs && k in t.__attrs) return t.__attrs[k]; c = t && t.__base; }
+    throw new Error("AttributeError: '" + o.__cls + "' 对象没有属性 '" + k + "'");
+  }
+  return o[k];
+};
+const $truediv = (a, b) => { if (b === 0) throw new Error('ZeroDivisionError: division by zero'); return a / b; };
+const $delit = (o, i) => { if (Array.isArray(o)) { const n = o.length, j = i < 0 ? n + i : i; if (j < 0 || j >= n) throw new Error('IndexError: del 索引越界'); o.splice(j, 1); } else delete o[i]; };
+const $mkexc = (ty, args) => ({ __pyexc: true, type: ty, msg: args && args.length ? $str(args[0]) : '' });
+const $pyerr = (e) => {
+  if (e && e.__pyexc) return e;
+  const m = e instanceof Error ? e.message : String(e);
+  const pre = m.split(':')[0].trim();
+  const KNOWN = ['ValueError', 'TypeError', 'KeyError', 'IndexError', 'ZeroDivisionError', 'NameError', 'AttributeError', 'AssertionError', 'RuntimeError', 'StopIteration', 'OverflowError', 'RecursionError'];
+  return { __pyexc: true, type: KNOWN.includes(pre) ? pre : 'Exception', msg: KNOWN.includes(pre) ? m.slice(m.indexOf(':') + 1).trim() : m };
+};
+const $fmt = (v, spec) => {
+  let s = spec, fill = ' ', align = '', zfill = false, width = 0, comma = false, prec = -1, ty = '';
+  const last = s.slice(-1);
+  if (/^[bdoxXfeEgGns%]$/.test(last)) { ty = last; s = s.slice(0, -1); }
+  let m = /\.([1-9]\d*)$/.exec(s);
+  if (m) { prec = +m[1]; s = s.slice(0, m.index); }
+  if (s.endsWith(',')) { comma = true; s = s.slice(0, -1); }
+  m = /^([\s\S]?)([<>^])/.exec(s);
+  if (m) { if (m[1]) fill = m[1]; align = m[2]; s = s.slice(m[0].length); }
+  m = /^0(\d+)$/.exec(s);
+  if (m) { zfill = true; width = +m[1]; s = ''; }
+  else { m = /^(\d+)$/.exec(s); if (m) { width = +m[1]; s = ''; } }
+  if (s.length) throw new Error("ValueError: 不支持的格式说明符 '" + spec + "'");
+  let out;
+  const num = Number(v);
+  if (ty === 'f') out = num.toFixed(prec < 0 ? 6 : prec);
+  else if (ty === 'd') out = String(Math.trunc(num));
+  else if (ty === 'e') out = num.toExponential(prec < 0 ? 6 : prec);
+  else if (ty === 'g') out = String(+num.toPrecision(prec < 0 ? 6 : prec));
+  else if (ty === 's') out = $str(v);
+  else if (ty === 'x') out = (num < 0 ? '-' : '') + Math.abs(Math.trunc(num)).toString(16);
+  else if (ty === 'X') out = ((num < 0 ? '-' : '') + Math.abs(Math.trunc(num)).toString(16)).toUpperCase();
+  else if (ty === 'o') out = (num < 0 ? '-' : '') + Math.abs(Math.trunc(num)).toString(8);
+  else if (ty === 'b') out = (num < 0 ? '-' : '') + Math.abs(Math.trunc(num)).toString(2);
+  else if (ty === '%') out = (num * 100).toFixed(prec < 0 ? 6 : prec) + '%';
+  else if (ty === 'n') out = String(v);
+  else if (typeof v === 'number') out = Number.isInteger(v) ? String(v) : (prec < 0 ? String(v) : v.toFixed(prec));
+  else out = $str(v);
+  if (prec >= 0 && (ty === '' || ty === 's') && typeof v === 'string') out = out.slice(0, prec);
+  if (comma && typeof v === 'number') { const pp = out.indexOf('.'); const ip = pp < 0 ? out : out.slice(0, pp); const dp = pp < 0 ? '' : out.slice(pp); out = ip.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + dp; }
+  if (width && out.length < width) {
+    const neg = out[0] === '-' || out[0] === '+';
+    const sg = neg ? out[0] : '';
+    const body = neg ? out.slice(1) : out;
+    if (zfill && !align) out = sg + body.padStart(width - (neg ? 1 : 0), '0');
+    else {
+      align = align || (typeof v === 'number' ? '>' : '<');
+      const pad = width - body.length;
+      if (align === '<') out = body + fill.repeat(pad);
+      else if (align === '>') out = fill.repeat(pad) + body;
+      else { const l = Math.floor(pad / 2); out = fill.repeat(l) + body + fill.repeat(pad - l); }
+      if (neg && align !== '>') out = sg + out;
+    }
+  }
+  return out;
+};
+const $SIGS = {};
+const $kw = (f, name, pos, kw) => {
+  const sig = $SIGS[name];
+  if (!sig) return f(...pos, ...Object.values(kw));
+  const ps = sig[0], kwn = sig[1];
+  const args = pos.slice();
+  const rest = {};
+  for (const k in kw) {
+    const i = ps.indexOf(k);
+    if (i < 0) {
+      if (!kwn) throw new Error("TypeError: " + name + "() got an unexpected keyword argument '" + k + "'");
+      rest[k] = kw[k];
+      continue;
+    }
+    if (i < pos.length) throw new Error('TypeError: ' + name + "() got multiple values for argument '" + k + "'");
+    args[i] = kw[k];
+  }
+  if (kwn) args[ps.length] = rest;
+  return f(...args);
+};
+const $CLS = {};
+const $M = (o, m, args) => {
+  let c = o && o.__cls;
+  while (c) { const t = $CLS[c]; if (t && t[m]) return t[m](o, ...args); c = t && t.__base; }
+  throw new Error("AttributeError: '" + $type(o) + "' 对象没有方法 '" + m + "'");
+};
+const $M2 = (cls, o, m, args) => {
+  const t = $CLS[cls];
+  if (t && t[m]) return t[m](o, ...args);
+  throw new Error("AttributeError: '" + cls + "' 没有方法 '" + m + "'");
+};
+const $NEW = (cls, args) => {
+  const t = $CLS[cls];
+  if (!t) throw new Error("NameError: name '" + cls + "' is not defined");
+  const o = { __cls: cls };
+  let c = cls;
+  while (c) { const ct = $CLS[c]; if (ct && ct.__attrs) Object.assign(o, ct.__attrs); c = ct && ct.__base; }
+  let ic = cls;
+  while (ic) { const ct = $CLS[ic]; if (ct && ct.__init__) { ct.__init__(o, ...args); break; } ic = ct && ct.__base; }
+  return o;
+};
+const $isinst = (o, c) => { let cur = o && o.__cls; while (cur) { if (cur === c) return true; cur = $CLS[cur] && $CLS[cur].__base; } return false; };
+const $next2 = (g) => { if (g && typeof g.next === 'function') { const r = g.next(); if (r.done) throw new Error('StopIteration'); return r.value; } throw new TypeError('对象不可 next()'); };
 `;
 
 // ---------------- 工具 ----------------
@@ -379,7 +502,7 @@ function lex(src: string, errs: Py2JsError[]): Tok[] {
     const three = src.slice(i, i + 3);
     const two = src.slice(i, i + 2);
     if (three === '**=' || three === '//=' || three === '>>=' || three === '<<=') { push('op', three); i += 3; continue; }
-    if (two === ':=') { errs.push({ line, msg: '海象运算符 := 不支持，请拆成普通赋值' }); i += 2; continue; }
+    if (two === ':=') { push('op', ':='); i += 2; continue; }
     if (['**', '//', '<<', '>>', '<=', '>=', '==', '!=', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '->'].includes(two)) {
       if (two === '->') { i += 2; continue; } // 返回注解，忽略
       push('op', two); i += 2; continue;
@@ -444,6 +567,8 @@ function createParser(toks: Tok[], errs: Py2JsError[]) {
     if (atKw('while')) return [parseWhile()];
     if (atKw('for')) return [parseFor()];
     if (atKw('def')) return [parseDef()];
+    if (atKw('try')) return [parseTry()];
+    if (atKw('class')) return [parseClass()];
     return parseLine();
   }
 
@@ -496,8 +621,8 @@ function createParser(toks: Tok[], errs: Py2JsError[]) {
     const test = expr();
     expect(':');
     const body = suite();
-    if (eatKw('else')) { errs.push({ line: peek().line, msg: 'while-else 不支持' }); throw new ParseBreak(); }
-    return { type: 'while', test, body };
+    if (eatKw('else')) { expect(':'); return { type: 'while', test, body, orelse: suite() }; }
+    return { type: 'while', test, body, orelse: [] };
   }
 
   // 专用目标解析：不进入表达式比较层（避免把 `i in range(...)` 当成比较链）
@@ -555,8 +680,8 @@ function createParser(toks: Tok[], errs: Py2JsError[]) {
     const iter = expr();
     expect(':');
     const body = suite();
-    if (eatKw('else')) { errs.push({ line: peek().line, msg: 'for-else 不支持' }); throw new ParseBreak(); }
-    return { type: 'for', target, iter, body };
+    if (eatKw('else')) { expect(':'); return { type: 'for', target, iter, body, orelse: suite() }; }
+    return { type: 'for', target, iter, body, orelse: [] };
   }
 
   function parseDef(): Node {
@@ -565,11 +690,12 @@ function createParser(toks: Tok[], errs: Py2JsError[]) {
     expect('(');
     const params: { name: string; def: Node | null }[] = [];
     let star: string | null = null;
+    let kwarg: string | null = null;
     let seenDef = false;
     if (!eat(')')) {
       while (true) {
         if (eat('*')) { star = expectName(); if (!eat(',') ) { expect(')'); break; } continue; }
-        if (eat('**')) { errs.push({ line: peek().line, msg: '**kwargs 不支持' }); throw new ParseBreak(); }
+        if (eat('**')) { kwarg = expectName(); expect(')'); break; }
         const pn = expectName();
         let pd: Node | null = null;
         if (eat('=')) { pd = expr(); seenDef = true; }
@@ -583,7 +709,66 @@ function createParser(toks: Tok[], errs: Py2JsError[]) {
     if (star && params.some(p => p.def)) { /* *args 后默认参数按 py 规则合法，宽松放行 */ }
     expect(':');
     const body = suite();
-    return { type: 'def', name, params, star, body };
+    return { type: 'def', name, params, star, kwarg, body };
+  }
+
+  function parseTry(): Node {
+    pos++; // try
+    expect(':');
+    const body = suite();
+    const handlers: { types: string[] | null; name: string | null; body: Node[] }[] = [];
+    let orelse: Node[] = [];
+    let finalbody: Node[] = [];
+    while (true) {
+      if (atKw('except')) {
+        pos++;
+        let types: string[] | null = null;
+        let name: string | null = null;
+        if (!at(':')) {
+          const one = (): string => {
+            const t = peek();
+            if (t.t !== 'name') { errs.push({ line: t.line, msg: 'except 期望异常类名' }); throw new ParseBreak(); }
+            pos++; return t.v;
+          };
+          if (eat('(')) {
+            types = [one()];
+            while (eat(',')) { if (eat(')')) break; types.push(one()); }
+            expect(')');
+          } else types = [one()];
+          if (eatKw('as')) name = expectName();
+        }
+        expect(':');
+        handlers.push({ types, name, body: suite() });
+        continue;
+      }
+      if (atKw('else') && handlers.length && !finalbody.length) { pos++; expect(':'); orelse = suite(); continue; }
+      if (atKw('finally')) { pos++; expect(':'); finalbody = suite(); break; }
+      break;
+    }
+    if (!handlers.length && !finalbody.length) { errs.push({ line: peek().line, msg: 'try 块至少需要一个 except 或 finally' }); throw new ParseBreak(); }
+    return { type: 'try', body, handlers, orelse, finalbody };
+  }
+
+  function parseClass(): Node {
+    pos++;
+    const name = expectName();
+    let base: string | null = null;
+    if (eat('(')) {
+      const t = peek();
+      if (t.t !== 'name') { errs.push({ line: t.line, msg: 'class 基类只能是类名' }); throw new ParseBreak(); }
+      pos++; base = t.v;
+      eat(',');
+      expect(')');
+    }
+    expect(':');
+    const body = suite();
+    for (const st of body) {
+      const ok = st.type === 'def' || st.type === 'pass'
+        || (st.type === 'assign' && st.targets.length === 1 && st.targets[0].type === 'name')
+        || (st.type === 'expr' && (st.e.type === 'str' || (st.e.type === 'const' && st.e.v === null)));
+      if (!ok) { errs.push({ line: peek().line, msg: 'class 体仅支持方法定义、简单类属性赋值与 pass/docstring' }); throw new ParseBreak(); }
+    }
+    return { type: 'class', name, base, body };
   }
 
   function forbidKw(kw: string, alt: string) {
@@ -612,14 +797,40 @@ function createParser(toks: Tok[], errs: Py2JsError[]) {
         }
         case 'import': forbidKw('import', '转译模式无法引入库，仅支持纯 Python 子集');
         case 'from': forbidKw('from-import', '转译模式无法引入库');
-        case 'class': forbidKw('class', '请改用函数与字典组织代码');
-        case 'try': case 'except': case 'finally': forbidKw('try/except', '错误处理暂不支持');
         case 'with': forbidKw('with', '上下文管理器暂不支持');
-        case 'raise': forbidKw('raise', '手动抛错暂不支持');
-        case 'del': forbidKw('del', 'del 暂不支持');
-        case 'yield': forbidKw('yield', '生成器函数暂不支持');
         case 'async': case 'await': forbidKw('async/await', '异步暂不支持');
-        case 'global': case 'nonlocal': forbidKw(t.v, '函数内直接赋值会创建局部变量');
+        case 'raise': {
+          pos++;
+          if (peek().t === 'nl' || peek().t === 'eof' || peek().t === 'dedent' || at(';')) {
+            errs.push({ line: t.line, msg: '单独 raise 暂不支持，请写 raise 异常类(信息)' });
+            throw new ParseBreak();
+          }
+          const e = expr();
+          if (e.type === 'call' && e.fn.type === 'name') return { type: 'raise', cls: e.fn.id, args: e.args, line: t.line };
+          if (e.type === 'name') return { type: 'raise', cls: e.id, args: [], line: t.line };
+          errs.push({ line: t.line, msg: 'raise 仅支持 raise 异常类(信息) 形式' });
+          throw new ParseBreak();
+        }
+        case 'del': {
+          pos++;
+          const tgt = exprOrTuple();
+          const items = tgt.type === 'tuple' ? tgt.items : [tgt];
+          for (const x of items) {
+            if (x.type !== 'name' && x.type !== 'sub') { errs.push({ line: t.line, msg: 'del 目标只能是变量、下标或字典键' }); throw new ParseBreak(); }
+          }
+          return { type: 'del', items, line: t.line };
+        }
+        case 'yield': {
+          pos++;
+          const e = (peek().t === 'nl' || peek().t === 'eof' || peek().t === 'dedent' || at(';')) ? null : exprOrTuple();
+          return { type: 'yield', e, line: t.line };
+        }
+        case 'global': case 'nonlocal': {
+          pos++;
+          const names = [expectName()];
+          while (eat(',')) names.push(expectName());
+          return { type: t.v, names, line: t.line };
+        }
         case 'lambda': break;
       }
     }
@@ -676,7 +887,14 @@ function createParser(toks: Tok[], errs: Py2JsError[]) {
 
   function expr(): Node {
     if (atKw('lambda')) return parseLambda();
-    const body = orExpr();
+    let body = orExpr();
+    if (at(':=')) {
+      if (body.type !== 'name') { errs.push({ line: peek().line, msg: ':= 左侧必须是变量名' }); throw new ParseBreak(); }
+      pos++;
+      const value = expr();
+      body = { type: 'walrus', id: body.id, value, line: peek().line };
+      return body;
+    }
     if (atKw('if')) {
       pos++;
       const test = orExpr();
@@ -785,8 +1003,8 @@ function createParser(toks: Tok[], errs: Py2JsError[]) {
         if (peek().t === 'name' && peek(1).t === 'op' && peek(1).v === '=') {
           const k = next().v; pos++; // '='
           kwargs.push({ k, v: expr() });
-        } else if (at('**')) { errs.push({ line: peek().line, msg: '** 字典展开不支持' }); throw new ParseBreak(); }
-        else if (at('*')) { errs.push({ line: peek().line, msg: '* 序列展开不支持' }); throw new ParseBreak(); }
+        } else if (at('**')) { pos++; args.push({ type: 'dstar', e: expr(), line: peek().line }); }
+        else if (at('*')) { pos++; args.push({ type: 'star', e: expr(), line: peek().line }); }
         else args.push(expr());
         if (eat(',')) { if (eat(')')) break; continue; }
         expect(')');
@@ -846,9 +1064,12 @@ function createParser(toks: Tok[], errs: Py2JsError[]) {
         if (atKw('for')) { const comp = compRest(e, 'list'); eat(')'); return comp; }
         if (eat(',')) {
           const items = [e];
-          while (!at(')')) { if (at(',')) { pos++; continue; } items.push(expr()); }
+          while (!at(')')) {
+            if (at(',')) { pos++; continue; }
+            if (at('*')) { pos++; items.push({ type: 'star', e: expr(), line: peek().line }); continue; }
+            items.push(expr());
+          }
           expect(')');
-          items.push(); // noop
           return { type: 'tuple', items };
         }
         expect(')');
@@ -857,10 +1078,16 @@ function createParser(toks: Tok[], errs: Py2JsError[]) {
       if (t.v === '[') {
         pos++;
         if (eat(']')) return { type: 'list', items: [] };
-        const e = expr();
+        let e: Node;
+        if (at('*')) { pos++; e = { type: 'star', e: expr(), line: peek().line }; }
+        else e = expr();
         if (atKw('for')) { const comp = compRest(e, 'list'); eat(']'); return comp; }
         const items = [e];
-        while (eat(',')) { if (eat(']')) return { type: 'list', items }; items.push(expr()); }
+        while (eat(',')) {
+          if (eat(']')) return { type: 'list', items };
+          if (at('*')) { pos++; items.push({ type: 'star', e: expr(), line: peek().line }); continue; }
+          items.push(expr());
+        }
         expect(']');
         return { type: 'list', items };
       }
@@ -875,13 +1102,27 @@ function createParser(toks: Tok[], errs: Py2JsError[]) {
     pos++; // {
     const line = peek().line;
     if (eat('}')) return { type: 'dict', pairs: [], line };
-    const first = expr();
+    if (at('**')) {
+      pos++;
+      const pairs: KV[] = [{ k: { type: 'dstar', e: expr(), line: peek().line } as any, v: null }];
+      while (eat(',')) {
+        if (eat('}')) return { type: 'dict', pairs, line };
+        if (at('**')) { pos++; pairs.push({ k: { type: 'dstar', e: expr(), line: peek().line } as any, v: null }); continue; }
+        const k = expr(); expect(':'); pairs.push({ k, v: expr() });
+      }
+      expect('}');
+      return { type: 'dict', pairs, line };
+    }
+    let first: Node;
+    if (at('*')) { pos++; first = { type: 'star', e: expr(), line: peek().line }; }
+    else first = expr();
     if (eat(':')) {
       const v = expr();
       if (atKw('for')) { const comp = compRestDict(first, v, line); eat('}'); return comp; }
       const pairs = [{ k: first, v }];
       while (eat(',')) {
         if (eat('}')) return { type: 'dict', pairs, line };
+        if (at('**')) { pos++; pairs.push({ k: { type: 'dstar', e: expr(), line: peek().line } as any, v: null }); continue; }
         const k = expr(); expect(':'); pairs.push({ k, v: expr() });
       }
       expect('}');
@@ -889,7 +1130,11 @@ function createParser(toks: Tok[], errs: Py2JsError[]) {
     }
     if (atKw('for')) { const comp = compRest(first, 'set'); eat('}'); return comp; }
     const items = [first];
-    while (eat(',')) { if (eat('}')) return { type: 'set', items, line }; items.push(expr()); }
+    while (eat(',')) {
+      if (eat('}')) return { type: 'set', items, line };
+      if (at('*')) { pos++; items.push({ type: 'star', e: expr(), line: peek().line }); continue; }
+      items.push(expr());
+    }
     expect('}');
     return { type: 'set', items, line };
   }
@@ -951,8 +1196,13 @@ function createParser(toks: Tok[], errs: Py2JsError[]) {
           else if (ck === ':' && specDepth === 0) { specIdx = k; break; }
         }
         if (specIdx >= 0) {
-          errs.push({ line, msg: 'f-string 格式说明符（:...）暂不支持，请预先用 round()/字符串处理' });
+          const spec = exprSrc.slice(specIdx + 1).trim();
           exprSrc = exprSrc.slice(0, specIdx);
+          const SP_RE = /^(?:([^0{}<>^\d])?([<>^]))?(\d+)?(,)?(?:\.([1-9]\d*))?([bdoxXfeEgGns%])?$/;
+          if (spec && !SP_RE.test(spec)) { errs.push({ line, msg: `不支持的格式说明符 '${spec}'` }); throw new ParseBreak(); }
+          const node = miniExpr(exprSrc, line);
+          parts.push({ expr: node, conv, dbg, spec: spec || null, src: exprSrc });
+          continue;
         }
         const node = miniExpr(exprSrc, line);
         parts.push({ expr: node, conv, dbg, src: exprSrc });
@@ -985,8 +1235,8 @@ function createParser(toks: Tok[], errs: Py2JsError[]) {
 // 产物优先级层级（用于括号判断）
 const P_LAMBDA = 1, P_TERNARY = 2, P_OR = 3, P_NOT = 4, P_CMP = 5, P_BIT = 6, P_SHIFT = 9, P_ADD = 10, P_MUL = 11, P_UNARY = 12, P_POW = 13, P_ATOM = 15;
 
-const BIN_HELPER: Record<string, string> = { '+': '$add', '*': '$mul', '%': '$mod', '//': '$floordiv' };
-const BIN_DIRECT: Record<string, string> = { '-': '-', '/': '/', '&': '&', '|': '|', '^': '^', '<<': '<<', '>>': '>>' };
+const BIN_HELPER: Record<string, string> = { '+': '$add', '*': '$mul', '%': '$mod', '//': '$floordiv', '/': '$truediv' };
+const BIN_DIRECT: Record<string, string> = { '-': '-', '&': '&', '|': '|', '^': '^', '<<': '<<', '>>': '>>' };
 
 const NAME2HELPER: Record<string, string> = {
   len: '$len', abs: '$abs', sum: '$sum', sorted: '$sorted', reversed: '$reversed', enumerate: '$enumerate',
@@ -997,6 +1247,7 @@ const NAME2HELPER: Record<string, string> = {
 
 function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<string> } {
   const defs = new Set<string>();
+  const classNames = new Set<string>();
   const userBindings = new Set<string>();
   const numericVars = new Set<string>();
   const NUM_CALLS = ['len', 'int', 'float', 'sum', 'round', 'min', 'max', 'abs', 'pow', 'ord'];
@@ -1018,9 +1269,10 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
   const collectDefs = (nodes: Node[]) => {
     for (const st of nodes) {
       if (st.type === 'def') { defs.add(st.name); userBindings.add(st.name); collectDefs(st.body); }
+      else if (st.type === 'class') { defs.add(st.name); classNames.add(st.name); for (const m of st.body) { if (m.type === 'def') collectDefs(m.body); } }
       else if (st.type === 'if') { collectDefs(st.body); collectDefs(st.orelse); }
-      else if (st.type === 'while') collectDefs(st.body);
-      else if (st.type === 'for') collectDefs(st.body);
+      else if (st.type === 'while') { collectDefs(st.body); collectDefs((st as any).orelse || []); }
+      else if (st.type === 'for') { collectDefs(st.body); collectDefs((st as any).orelse || []); }
     }
   };
   collectDefs(prog);
@@ -1033,14 +1285,15 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
       case 'const': return n.v === null ? 'null' : String(n.v);
       case 'name': return NAME2HELPER[n.id] && !userBindings.has(n.id) ? NAME2HELPER[n.id] : ident(n.id);
       case 'fstr': return genFstr(n);
-      case 'list': return `[${n.items.map((x: Node) => genE(x, 0)).join(', ')}]`;
-      case 'tuple': return `[${n.items.map((x: Node) => genE(x, 0)).join(', ')}]`;
-      case 'set': return `new Set([${n.items.map((x: Node) => genE(x, 0)).join(', ')}])`;
+      case 'list': return `[${n.items.map((x: Node) => (x as any).type === 'star' ? `...$arr(${genE((x as any).e, 0)})` : genE(x, 0)).join(', ')}]`;
+      case 'tuple': return `[${n.items.map((x: Node) => (x as any).type === 'star' ? `...$arr(${genE((x as any).e, 0)})` : genE(x, 0)).join(', ')}]`;
+      case 'set': return `new Set([${n.items.map((x: Node) => (x as any).type === 'star' ? `...$arr(${genE((x as any).e, 0)})` : genE(x, 0)).join(', ')}])`;
       case 'dict': return genDict(n);
       case 'bin': return genBin(n, prec);
       case 'unary': return genUnary(n, prec);
       case 'bool': return genBool(n, prec);
       case 'cmp': return genCmp(n);
+      case 'walrus': return `(${ident((n as any).id)} = ${genE((n as any).value, 0)})`;
       case 'ifexp': {
         const js = `$bool(${genE(n.test, 0)}) ? ${genE(n.body, P_TERNARY + 1)} : ${genE(n.orelse, P_TERNARY)}`;
         return prec > P_TERNARY ? `(${js})` : js;
@@ -1050,7 +1303,8 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
         const js = `(${ps}) => ${genE(n.body, P_TERNARY + 1)}`;
         return prec > P_LAMBDA ? `(${js})` : js;
       }
-      case 'attr': return `${genE(n.obj, P_ATOM)}.${safeAttr(n.name)}`;
+      case 'attr': return `$ga(${genE(n.obj, P_ATOM)}, ${JSON.stringify(n.name)})`;
+      case 'star': case 'dstar': throw new Error('内部：展开语法只能用于调用实参或列表/字典字面量');
       case 'sub': return `${genE(n.obj, P_ATOM)} === null ? (() => { throw new Error("TypeError: 'NoneType' 不可索引"); })() : $idx(${genE(n.obj, 0)}, ${genE(n.idx, 0)})`.replace(/^/, '');
       case 'slice': {
         const a = (x: Node) => x ? genE(x, 0) : 'undefined';
@@ -1070,7 +1324,8 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
       if (p.lit !== undefined) s += p.lit.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
       else {
         const inner = genE(p.expr, 0);
-        const val = p.conv === 'r' ? `$repr(${inner})` : (p.conv === 's' ? `$str(${inner})` : inner);
+        const v0 = p.conv === 'r' ? `$repr(${inner})` : (p.conv === 's' ? `$str(${inner})` : inner);
+        const val = p.spec ? `$fmt(${v0}, ${JSON.stringify(p.spec)})` : v0;
         if (p.dbg) {
           const label = p.src.replace(/[\\`$"]/g, ' ');
           s += `${JSON.stringify(label + '=')}\${$repr(${inner})}`;
@@ -1083,6 +1338,7 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
   function genDict(n: Node): string {
     if (!n.pairs.length) return '{}';
     const items = n.pairs.map(({ k, v }: KV) => {
+      if ((k as any).type === 'dstar') return `...${genE((k as any).e, 0)}`;
       const kjs = genE(k, 0);
       // 字符串/数字字面量键直接生成，其他用计算键
       if ((k.type === 'str' && !k.raw) || k.type === 'num') return `${kjs}: ${genE(v, 0)}`;
@@ -1161,26 +1417,50 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
     return `(function () { ${temps.join(' ')} return ${parts.join(' && ')}; })()`;
   }
 
+  const genA = (a: Node): string => {
+    const t = (a as any).type;
+    if (t === 'star') return `...$arr(${genE((a as any).e, 0)})`;
+    if (t === 'dstar') throw new Error('内部：dstar 需在调用层处理');
+    return genE(a, 0);
+  };
+
   function genCall(n: Node): string {
     const fn = n.fn;
+    // super().m(args) 特判（类方法内）
+    if (fn.type === 'attr' && fn.obj.type === 'call' && (fn.obj.fn as any).type === 'name' && (fn.obj.fn as any).id === 'super' && !(fn.obj as any).args.length) {
+      if (!classCtx || !classCtx.base) { errs.push({ line: n.line || 0, msg: 'super() 只能在类方法内使用' }); return 'null'; }
+      const selfRef = classCtx.selfP ? ident(classCtx.selfP) : 'null';
+      return `$M2(${JSON.stringify(classCtx.base)}, ${selfRef}, ${JSON.stringify(fn.name)}, [${n.args.map(genA).join(', ')}])`;
+    }
     // 方法调用
     if (fn.type === 'attr') return genMethod(n);
     if (fn.type === 'name') {
       const name = fn.id;
       if (defs.has(name)) {
-        if (n.kwargs.length) { errs.push({ line: n.line || 0, msg: `自定义函数 ${name}() 暂不支持关键字实参` }); return 'null'; }
-        return `${ident(name)}(${n.args.map((a: Node) => genE(a, 0)).join(', ')})`;
+        if (classNames.has(name)) {
+          if (n.kwargs.length) { errs.push({ line: n.line || 0, msg: `类 ${name}() 实例化暂不支持关键字实参` }); return 'null'; }
+          return `$NEW(${JSON.stringify(name)}, [${n.args.map(genA).join(', ')}])`;
+        }
+        if (n.kwargs.length || n.args.some((a: any) => a.type === 'dstar')) {
+          const pos = n.args.filter((a: any) => a.type !== 'dstar').map(genA).join(', ');
+          const kwParts = [
+            ...n.args.filter((a: any) => a.type === 'dstar').map((a: any) => `...${genE(a.e, 0)}`),
+            ...n.kwargs.map((kv: KV) => `${JSON.stringify(kv.k)}: ${genE(kv.v, 0)}`),
+          ];
+          return `$kw(${ident(name)}, ${JSON.stringify(name)}, [${pos}], {${kwParts.join(', ')}})`;
+        }
+        return `${ident(name)}(${n.args.map(genA).join(', ')})`;
       }
       if (name === 'print') return genPrint(n);
       const bi = genBuiltin(name, n);
       if (bi !== null) return bi;
       // 未知名字：直接生成调用（运行时自然报错）
       if (n.kwargs.length) { errs.push({ line: n.line || 0, msg: `未知函数 ${name}() 不支持关键字实参` }); return 'null'; }
-      return `${ident(name)}(${n.args.map((a: Node) => genE(a, 0)).join(', ')})`;
+      return `${ident(name)}(${n.args.map(genA).join(', ')})`;
     }
     // 表达式调用（lambda 赋值等）
     if (n.kwargs.length) { errs.push({ line: n.line || 0, msg: '该调用不支持关键字实参' }); return 'null'; }
-    return `${genE(fn, P_ATOM)}(${n.args.map((a: Node) => genE(a, 0)).join(', ')})`;
+    return `${genE(fn, P_ATOM)}(${n.args.map(genA).join(', ')})`;
   }
 
   const kwGet = (n: Node, k: string): Node | null => {
@@ -1196,20 +1476,23 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
   function genPrint(n: Node): string {
     kwCheck(n, ['sep', 'end', 'flush']);
     const sep = kwGet(n, 'sep'), end = kwGet(n, 'end');
-    const args = n.args.map((a: Node) => genE(a, 0)).join(', ');
+    const args = n.args.map((a: Node) => (a as any).type === 'star' ? `...$arr(${genE((a as any).e, 0)})` : genE(a, 0)).join(', ');
+    if (n.args.some((a: any) => a.type === 'dstar')) { errs.push({ line: n.line || 0, msg: 'print() 不支持 ** 展开' }); return 'null'; }
     return `$print([${args}], ${sep ? genE(sep, 0) : 'undefined'}, ${end ? genE(end, 0) : 'undefined'})`;
   }
 
   function genBuiltin(name: string, n: Node): string | null {
-    const a = (i: number, d = 'undefined') => n.args[i] ? genE(n.args[i], 0) : d;
-    const all = () => n.args.map((x: Node) => genE(x, 0)).join(', ');
+    if (n.args.some((x: any) => x.type === 'dstar')) { errs.push({ line: n.line || 0, msg: `内建函数 ${name}() 暂不支持 ** 展开` }); return 'null'; }
+    const hasStar = n.args.some((x: any) => x.type === 'star');
+    const a = (i: number, d = 'undefined') => { const x = n.args[i]; if (!x) return d; return (x as any).type === 'star' ? `...$arr(${genE(x.e, 0)})` : genE(x, 0); };
+    const all = () => n.args.map((x: Node) => genA(x)).join(', ');
     const noKw = (extra: string[] = []) => kwCheck(n, extra);
     switch (name) {
       case 'len': noKw(); return `$len(${a(0)})`;
       case 'range': noKw(); return `$range(${all() || '0'})`;
       case 'abs': noKw(); return `Math.abs(${a(0)})`;
       case 'sum': noKw(); return `$sum(${a(0)}, ${a(1, 'undefined')})`;
-      case 'min': case 'max': noKw(); return `$minmax([${all()}], ${name === 'min'})`;
+      case 'min': case 'max': noKw(); return n.args.length === 1 && !hasStar ? `$minmax($arr(${a(0)}), ${name === 'min'})` : `$minmax([${all()}], ${name === 'min'})`;
       case 'round': noKw(); return `$round(${a(0)}, ${a(1, 'undefined')})`;
       case 'sorted': noKw(['key', 'reverse']); return `$sorted(${a(0)}, ${kwGet(n, 'key') ? genE(kwGet(n, 'key')!, 0) : 'null'}, ${kwGet(n, 'reverse') ? `$bool(${genE(kwGet(n, 'reverse')!, 0)})` : 'false'})`;
       case 'reversed': noKw(); return `$reversed(${a(0)})`;
@@ -1238,7 +1521,33 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
       case 'oct': noKw(); return `$oct(${a(0)})`;
       case 'input': errs.push({ line: n.line || 0, msg: 'input() 在浏览器不可用，请在编辑器里写死输入数据' }); return "''";
       case 'open': errs.push({ line: n.line || 0, msg: '文件读写(open)在浏览器不可用' }); return 'null';
-      case 'isinstance': case 'hash': case 'id': case 'vars': case 'dir': case 'getattr': case 'setattr': case 'super': case 'format': case 'iter': case 'next': case 'callable': case 'hasattr':
+      case 'isinstance': {
+        const x = n.args[0], c = n.args[1];
+        if (!x || !c) { errs.push({ line: n.line || 0, msg: 'isinstance() 需要 2 个参数' }); return 'null'; }
+        const chk = (cn: string): string | null => {
+          if (classNames.has(cn)) return `$isinst(${genE(x, 0)}, ${JSON.stringify(cn)})`;
+          const BI: Record<string, string> = {
+            int: "(v) => typeof v === 'number' && Number.isInteger(v)", float: "(v) => typeof v === 'number'",
+            str: "(v) => typeof v === 'string'", bool: "(v) => typeof v === 'boolean'",
+            list: "Array.isArray", tuple: "Array.isArray", set: "(v) => v instanceof Set",
+            dict: "(v) => v !== null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Set) && !v.__cls",
+            NoneType: "(v) => v === null",
+          };
+          return BI[cn] ? `(${BI[cn]})(${genE(x, 0)})` : null;
+        };
+        if (c.type === 'name') { const r = chk(c.id); if (r) return r; }
+        if (c.type === 'tuple') {
+          const parts = c.items.map((it: Node) => it.type === 'name' ? chk(it.id) : null);
+          if (parts.every(p => p)) return `(${parts.join(' || ')})`;
+        }
+        errs.push({ line: n.line || 0, msg: 'isinstance 第二个参数需为已定义的类名或内建类型名' }); return 'null';
+      }
+      case 'next': noKw(); return `$next2(${a(0)})`;
+      case 'iter': noKw(); return `$arr(${a(0)})`;
+      case 'callable': noKw(); return `(typeof ${a(0)} === 'function')`;
+      case 'hasattr': noKw(); return `(() => { try { $ga(${a(0)}, ${a(1)}); return true; } catch (e) { return false; } })()`;
+      case 'getattr': noKw(); return n.args.length >= 3 ? `(() => { try { return $ga(${a(0)}, ${a(1)}); } catch (e) { return ${a(2)}; } })()` : `$ga(${a(0)}, ${a(1)})`;
+      case 'hash': case 'id': case 'vars': case 'dir': case 'setattr': case 'super': case 'format':
         errs.push({ line: n.line || 0, msg: `${name}() 暂不支持` }); return 'null';
       default: return null;
     }
@@ -1288,10 +1597,10 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
       case 'islower': noKw(); return `$islower(${obj})`;
       case 'isupper': noKw(); return `$isupper(${obj})`;
       case 'format': errs.push({ line: n.line || 0, msg: 'str.format 不支持，请改用 f-string' }); return 'null';
-      case 'keys': noKw(); return `Object.keys(${obj})`;
-      case 'values': noKw(); return `Object.values(${obj})`;
-      case 'items': noKw(); return `$items(${obj})`;
-      case 'get': noKw(); return n.args.length >= 2 ? `$dget(${obj}, ${a(0)}, ${a(1)})` : `$dget(${obj}, ${a(0)})`;
+      case 'keys': noKw(); return `(${obj}.__cls ? $M(${obj}, 'keys', []) : Object.keys(${obj}))`;
+      case 'values': noKw(); return `(${obj}.__cls ? $M(${obj}, 'values', []) : Object.values(${obj}))`;
+      case 'items': noKw(); return `(${obj}.__cls ? $M(${obj}, 'items', []) : $items(${obj}))`;
+      case 'get': noKw(); return `(${obj}.__cls ? $M(${obj}, 'get', [${all()}]) : ${n.args.length >= 2 ? `$dget(${obj}, ${a(0)}, ${a(1)})` : `$dget(${obj}, ${a(0)})`})`;
       case 'update': noKw(); return `$dupdate(${obj}, ${a(0)})`;
       case 'setdefault': noKw(); return n.args.length >= 2 ? `$dsetdef(${obj}, ${a(0)}, ${a(1)})` : `$dsetdef(${obj}, ${a(0)})`;
       case 'add': noKw(); return `${obj}.add(${a(0)})`;
@@ -1300,8 +1609,8 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
       case 'intersection': noKw(); return `$intersection(${obj}, ${a(0)})`;
       case 'difference': noKw(); return `$difference(${obj}, ${a(0)})`;
       default:
-        // 未知属性调用：直接生成（可能是用户对象方法）
-        return `${genE(n.fn as Node, P_ATOM)}(${all()})`;
+        // 未知方法：运行时查用户类方法表
+        return `$M(${obj}, ${JSON.stringify(name)}, [${all()}])`;
     }
   }
 
@@ -1332,6 +1641,8 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
   const lines: string[] = [];
   let ind = 1;
   const W = (s: string) => lines.push('  '.repeat(ind) + s);
+  let brkFlag: string | null = null; // while/for-else 的 break 标志
+  let classCtx: { base: string | null; selfP: string | null } | null = null;
 
   function collectLocals(body: Node[]): Set<string> {
     const names = new Set<string>();
@@ -1339,19 +1650,56 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
       if (t.type === 'name') names.add(t.id);
       else if (t.type === 'tuple') t.items.forEach(addTarget);
     };
+    const scanAll = (n: any) => {
+      if (!n || typeof n !== 'object') return;
+      if (Array.isArray(n)) { n.forEach(scanAll); return; }
+      if (typeof n.type === 'string') {
+        if (n.type === 'walrus') names.add(n.id);
+        else if (n.type === 'def' || n.type === 'class') return; // 嵌套作用域自管
+        Object.values(n).forEach(scanAll);
+      }
+    };
     const walk = (nodes: Node[]) => {
       for (const st of nodes) {
+        scanAll(st);
         if (st.type === 'assign') st.targets.forEach(addTarget);
         else if (st.type === 'aug') addTarget(st.target.type === 'name' ? st.target : { type: 'none' });
         else if (st.type === 'if') { walk(st.body); walk(st.orelse); }
-        else if (st.type === 'while') walk(st.body);
-        else if (st.type === 'for') walk(st.body); // target 由 for 循环自身声明
+        else if (st.type === 'while') { walk(st.body); walk((st as any).orelse || []); }
+        else if (st.type === 'for') { addTarget(st.target); walk(st.body); walk((st as any).orelse || []); }
+        else if (st.type === 'try') { (st as any).handlers.forEach((h: any) => { if (h.name) names.add(h.name); walk(h.body); }); walk((st as any).orelse || []); walk((st as any).finalbody || []); }
         else if (st.type === 'def') { /* function 声明自带绑定，不能重复 let 声明 */ }
       }
     };
     walk(body);
     return names;
   }
+
+  // 收集 global / nonlocal 声明的名字（不深入 def/class）
+  const collectNL = (nodes: Node[]): Set<string> => {
+    const out = new Set<string>();
+    const walk2 = (ns: Node[]) => {
+      for (const st of ns) {
+        if (st.type === 'global' || st.type === 'nonlocal') (st as any).names.forEach((n: string) => out.add(n));
+        else if (st.type === 'if') { walk2(st.body); walk2(st.orelse); }
+        else if (st.type === 'while') { walk2(st.body); walk2((st as any).orelse || []); }
+        else if (st.type === 'for') { walk2(st.body); walk2((st as any).orelse || []); }
+        else if (st.type === 'try') { walk2(st.body); (st as any).handlers.forEach((h: any) => walk2(h.body)); walk2((st as any).orelse || []); walk2((st as any).finalbody || []); }
+      }
+    };
+    walk2(nodes);
+    return out;
+  };
+
+  // 函数体是否直接含 yield（不深入嵌套 def/class）
+  const scanYield = (nodes: Node[]): boolean => nodes.some((st: any) => {
+    if (st.type === 'yield') return true;
+    if (st.type === 'if') return scanYield(st.body) || scanYield(st.orelse || []);
+    if (st.type === 'while') return scanYield(st.body) || scanYield(st.orelse || []);
+    if (st.type === 'for') return scanYield(st.body) || scanYield(st.orelse || []);
+    if (st.type === 'try') return scanYield(st.body) || st.handlers.some((h: any) => scanYield(h.body)) || scanYield(st.orelse || []) || scanYield(st.finalbody || []);
+    return false;
+  });
 
   function genBody(body: Node[]) {
     for (const st of body) genStmt(st);
@@ -1382,16 +1730,23 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
         } else W('}');
         break;
       }
-      case 'while': {
-        W(`while ($bool(${genE(st.test, 0)})) {`);
-        ind++; genBody(st.body); ind--;
-        W('}');
+      case 'while': genWhile(st); break;
+      case 'for': genFor(st); break;
+      case 'try': genTry(st); break;
+      case 'class': genClass(st); break;
+      case 'raise': W(`throw $mkexc(${JSON.stringify((st as any).cls)}, [${(st as any).args.map((a: Node) => genE(a, 0)).join(', ')}]);`); break;
+      case 'del': {
+        for (const t of (st as any).items) {
+          if (t.type === 'name') { numericVars.delete(t.id); W(`${ident(t.id)} = undefined;`); }
+          else if (t.type === 'sub') W(`$delit(${genE(t.obj, 0)}, ${genE(t.idx, 0)});`);
+        }
         break;
       }
-      case 'for': genFor(st); break;
+      case 'yield': W((st as any).e ? `yield ${genE((st as any).e, 0)};` : 'yield;'); break;
+      case 'global': case 'nonlocal': break;
       case 'def': genFunc(st); break;
       case 'return': W(st.e ? `return ${genE(st.e, 0)};` : 'return;'); break;
-      case 'break': W('break;'); break;
+      case 'break': W(brkFlag ? `${brkFlag} = true; break;` : 'break;'); break;
       case 'continue': W('continue;'); break;
       case 'pass': break;
       case 'assert': W(`$assert(${genE(st.e, 0)}${st.msg ? `, ${genE(st.msg, 0)}` : ''});`); break;
@@ -1432,12 +1787,100 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
     }
   }
 
+  function genWhile(st: Node) {
+    const flag = st.orelse.length ? `$brk${++uid}` : null;
+    if (flag) W(`let ${flag} = false;`);
+    W(`while ($bool(${genE(st.test, 0)})) {`);
+    const saved = brkFlag; brkFlag = flag;
+    ind++; genBody(st.body); ind--;
+    brkFlag = saved;
+    W('}');
+    if (flag) { W(`if (!${flag}) {`); ind++; genBody(st.orelse); ind--; W('}'); }
+  }
+
+  function genTry(st: Node) {
+    W('try {');
+    ind++; genBody(st.body); if (st.orelse.length) genBody(st.orelse); ind--;
+    if (st.handlers.length) {
+      const idn = ++uid;
+      W(`} catch ($e${idn}) {`);
+      ind++;
+      W(`const $x${idn} = $pyerr($e${idn});`);
+      st.handlers.forEach((h: any, i: number) => {
+        let cond = 'true';
+        if (h.types && !h.types.includes('Exception')) cond = `${JSON.stringify(h.types)}.includes($x${idn}.type)`;
+        W(i === 0 ? `if (${cond}) {` : `} else if (${cond}) {`);
+        ind++;
+        if (h.name) W(`const ${ident(h.name)} = $x${idn};`);
+        genBody(h.body);
+        ind--;
+      });
+      W(`} else { throw $e${idn}; }`);
+      ind--;
+    }
+    if (st.finalbody.length) {
+      W('} finally {');
+      ind++; genBody(st.finalbody); ind--;
+    }
+    W('}');
+  }
+
+  function genClass(st: Node) {
+    W(`$CLS[${JSON.stringify(st.name)}] = {`);
+    ind++;
+    W(`__base: ${st.base ? JSON.stringify(st.base) : 'null'},`);
+    const attrs = st.body.filter((x: any) => x.type === 'assign');
+    if (attrs.length) {
+      W('__attrs: {');
+      ind++;
+      for (const a of attrs) W(`${JSON.stringify((a.targets[0] as any).id)}: ${genE(a.value, 0)},`);
+      ind--;
+      W('},');
+    }
+    const savedCtx = classCtx;
+    classCtx = { base: st.base, selfP: null };
+    for (const m of st.body) { if (m.type === 'def') genMethodDef(m); }
+    classCtx = savedCtx;
+    ind--;
+    W('};');
+  }
+
+  function genMethodDef(m: Node) {
+    const st = m as any;
+    const key = st.name;
+    const ps = st.params.map((pp: any) => pp.def ? `${ident(pp.name)} = ${genE(pp.def, 0)}` : ident(pp.name));
+    if (st.star) ps.push(`...${ident(st.star)}`);
+    const hasYield = scanYield(st.body);
+    W(`${hasYield ? '*' : ''}${JSON.stringify(key)}(${ps.join(', ')}) {`);
+    ind++;
+    const addedU: string[] = [];
+    const pushU = (nm: string) => { if (!userBindings.has(nm)) { userBindings.add(nm); addedU.push(nm); } };
+    for (const pp of st.params) pushU(pp.name);
+    if (st.star) pushU(st.star);
+    const nl = collectNL(st.body);
+    const locals = [...collectLocals(st.body)].filter(n => !nl.has(n));
+    for (const nm of locals) pushU(nm);
+    if (locals.size) W(`let ${[...locals].map(ident).join(', ')};`);
+    classCtx = { base: (classCtx as any).base, selfP: st.params.length ? st.params[0].name : null };
+    const savedNum = [...numericVars];
+    numericVars.clear();
+    genBody(st.body);
+    numericVars.clear();
+    for (const nm of savedNum) numericVars.add(nm);
+    for (const nm of addedU) userBindings.delete(nm);
+    ind--;
+    W('},');
+  }
+
   function genFor(st: Node) {
     // range 优化：for i in range(...) → C 风格循环
     const iter = st.iter;
     const isRange = iter.type === 'call' && iter.fn.type === 'name' && iter.fn.id === 'range' && !defs.has('range') && !iter.kwargs.length && iter.args.length >= 1 && iter.args.length <= 3;
     if (isRange && st.target.type === 'name') {
       numericVars.add(st.target.id);
+      let flag: string | null = null;
+      let saved2: string | null = null;
+      if (st.orelse.length) { flag = `$brk${++uid}`; W(`let ${flag} = false;`); saved2 = brkFlag; brkFlag = flag; }
       const args = iter.args;
       const start = args.length >= 2 ? genE(args[0], 0) : '0';
       const stop = genE(args.length >= 2 ? args[1] : args[0], 0);
@@ -1447,7 +1890,7 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
       const eid = !simple(args.length >= 2 ? args[1] : args[0]);
       const spd = args.length >= 3 && !simple(args[2]);
       const n = ++uid;
-      const parts = [`let ${ident(st.target.id)} = ${sid ? `(${start})` : start}`];
+      const parts = [`${ident(st.target.id)} = ${sid ? `(${start})` : start}`];
       if (eid) parts.push(`$e${n} = (${stop})`);
       if (spd) parts.push(`$s${n} = (${step})`);
       const eRef = eid ? `$e${n}` : `(${stop})`;
@@ -1455,24 +1898,42 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
       W(`for (${parts.join(', ')}; ${sRef} > 0 ? ${ident(st.target.id)} < ${eRef} : ${ident(st.target.id)} > ${eRef}; ${ident(st.target.id)} += ${sRef}) {`);
       ind++; genBody(st.body); ind--;
       W('}');
+      brkFlag = saved2;
+      if (st.orelse.length) { W(`if (!${flag}) {`); ind++; genBody(st.orelse); ind--; W('}'); }
       return;
     }
     const tgt = destruct(st.target);
-    W(`for (const ${tgt} of $iter(${genE(iter, 0)})) {`);
+    const flag = st.orelse.length ? `$brk${++uid}` : null;
+    if (flag) W(`let ${flag} = false;`);
+    W(`for (${tgt} of $iter(${genE(iter, 0)})) {`);
+    const saved = brkFlag; brkFlag = flag;
     ind++; genBody(st.body); ind--;
+    brkFlag = saved;
     W('}');
+    if (flag) { W(`if (!${flag}) {`); ind++; genBody(st.orelse); ind--; W('}'); }
   }
 
   function genFunc(st: Node) {
+    const hasYield = scanYield(st.body);
     const params = st.params.map((p: any) => p.def ? `${ident(p.name)} = ${genE(p.def, 0)}` : ident(p.name));
-    if (st.star) params.push(`...${ident(st.star)}`);
-    W(`function ${ident(st.name)}(${params.join(', ')}) {`);
-    ind++;
+    if (st.star && st.kwarg) {
+      const all = `$all${++uid}`;
+      W(`function${hasYield ? '*' : ''} ${ident(st.name)}(...${all}) {`);
+      ind++;
+      W(`const ${ident(st.star)} = ${all}.slice(0, ${st.params.length});`);
+      W(`const ${ident(st.kwarg)} = ${all}.length > ${st.params.length} ? ${all}[${st.params.length}] : {};`);
+    } else {
+      if (st.star) params.push(`...${ident(st.star)}`);
+      if (st.kwarg) params.push(ident(st.kwarg));
+      W(`function${hasYield ? '*' : ''} ${ident(st.name)}(${params.join(', ')}) {`);
+      ind++;
+    }
     const addedU: string[] = [];
     const pushU = (nm: string) => { if (!userBindings.has(nm)) { userBindings.add(nm); addedU.push(nm); } };
     for (const p of st.params) pushU(p.name);
     if (st.star) pushU(st.star);
-    const locals = collectLocals(st.body);
+    const nl = collectNL(st.body);
+    const locals = [...collectLocals(st.body)].filter(n => !nl.has(n));
     for (const nm of locals) pushU(nm);
     if (locals.size) W(`let ${[...locals].map(ident).join(', ')};`);
     const savedNum = [...numericVars];
@@ -1483,6 +1944,7 @@ function codegen(prog: Node[], errs: Py2JsError[]): { body: string; defs: Set<st
     for (const nm of addedU) userBindings.delete(nm);
     ind--;
     W('}');
+    W(`$SIGS[${JSON.stringify(st.name)}] = [[${st.params.map((p: any) => JSON.stringify(p.name)).join(', ')}], ${st.kwarg ? JSON.stringify(st.kwarg) : 'null'}];`);
   }
 
   // 顶层
