@@ -5,27 +5,161 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 const entries = (await getCollection('kb', ({ data }) => !data.draft)).sort(
   (a, b) => a.data.order - b.data.order,
 );
-const categories = [...new Set(entries.map((e) => e.data.category))];
 ---
 
 <BaseLayout title="知识库">
   <h1>知识库</h1>
-  <p class="page-desc">结构化的知识笔记，按分类组织。新增一篇 = 在 <code>src/content/kb/</code> 加一个 Markdown 文件。</p>
-  {categories.map((category) => (
-    <section class="home-section">
-      <h2>{category}</h2>
-      <ul class="post-list">
-        {entries
-          .filter((e) => e.data.category === category)
-          .map((entry) => (
-            <li>
-              <a href={`/kb/${entry.id}/`}>
-                <span class="post-title">{entry.data.title}</span>
-                {entry.data.description && <span class="post-desc">{entry.data.description}</span>}
-              </a>
-            </li>
-          ))}
-      </ul>
-    </section>
-  ))}
+  <p class="page-desc">按分类分级浏览，点文件夹逐级进入。</p>
+
+  <nav id="crumbs" aria-label="面包屑"></nav>
+  <div id="kb-view"></div>
+
+  {/* 全量条目数据（JS 渲染分级视图） */}
+  <ul id="kb-data" hidden>
+    {entries.map((entry) => (
+      <li
+        data-cat={entry.data.category}
+        data-title={entry.data.title}
+        data-desc={entry.data.description || ''}
+        data-href={`/kb/${entry.id}/`}
+      ></li>
+    ))}
+  </ul>
+
+  <style>
+    #crumbs { margin: 0 0 14px; font-size: 0.92rem; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+    #crumbs:empty { display: none; }
+    #crumbs a { color: var(--fg-muted); text-decoration: none; padding: 3px 8px; border-radius: 8px; }
+    #crumbs a:hover { background: var(--accent-soft); color: var(--accent); }
+    #crumbs .sep { color: var(--fg-muted); opacity: 0.5; }
+    #crumbs .cur { color: var(--fg); font-weight: 600; padding: 3px 8px; }
+
+    .folder-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 11px 14px; border: 1px solid var(--border); border-radius: 12px;
+      margin-bottom: 8px; cursor: pointer; text-decoration: none;
+      background: var(--card); color: var(--fg);
+      transition: border-color 0.15s, transform 0.15s;
+    }
+    .folder-row:hover { border-color: var(--accent); transform: translateX(2px); }
+    .folder-row .ic { font-size: 1.15rem; line-height: 1; }
+    .folder-row .nm { flex: 1; font-weight: 600; }
+    .folder-row .ct { color: var(--fg-muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+    .folder-row .ar { color: var(--fg-muted); font-size: 0.85rem; }
+
+    .view-head { display: flex; align-items: baseline; justify-content: space-between; margin: 18px 0 10px; }
+    .view-head h2 { font-size: 1.05rem; margin: 0; }
+    .view-head .n { color: var(--fg-muted); font-size: 0.85rem; }
+    .empty { color: var(--fg-muted); padding: 24px 0; text-align: center; }
+  </style>
+
+  <script is:inline>
+    (function () {
+      var data = Array.prototype.slice.call(document.querySelectorAll('#kb-data li')).map(function (li) {
+        return { cat: li.dataset.cat || '未分类', title: li.dataset.title, desc: li.dataset.desc, href: li.dataset.href };
+      });
+      var view = document.getElementById('kb-view');
+      var crumbs = document.getElementById('crumbs');
+
+      function countUnder(prefix) {
+        var n = 0;
+        for (var i = 0; i < data.length; i++) if (data[i].cat === prefix || data[i].cat.indexOf(prefix + '/') === 0) n++;
+        return n;
+      }
+
+      function subDirs(path) {
+        var segLen = path ? path.split('/').length : 0;
+        var set = {};
+        for (var i = 0; i < data.length; i++) {
+          var segs = data[i].cat.split('/');
+          if (segs.length > segLen) {
+            var p = segs.slice(0, segLen + 1).join('/');
+            if (!path || p.indexOf(path + '/') === 0) set[p] = 1;
+          }
+        }
+        return Object.keys(set).sort(function (a, b) { return a.localeCompare(b, 'zh'); });
+      }
+
+      function directPosts(path) {
+        return data.filter(function (d) { return d.cat === path; });
+      }
+
+      function h(tag, cls, text) {
+        var el = document.createElement(tag);
+        if (cls) el.className = cls;
+        if (text != null) el.textContent = text;
+        return el;
+      }
+
+      function render(path) {
+        view.innerHTML = '';
+        crumbs.innerHTML = '';
+        // 面包屑
+        var segs = path ? path.split('/') : [];
+        var rootA = h('a', null, '📁 全部');
+        rootA.href = '#';
+        crumbs.appendChild(rootA);
+        var acc = [];
+        for (var i = 0; i < segs.length; i++) {
+          acc.push(segs[i]);
+          crumbs.appendChild(h('span', 'sep', '›'));
+          if (i === segs.length - 1) {
+            crumbs.appendChild(h('span', 'cur', segs[i]));
+          } else {
+            var a = h('a', null, segs[i]);
+            a.href = '#' + encodeURIComponent(acc.join('/'));
+            crumbs.appendChild(a);
+          }
+        }
+        // 子文件夹
+        var dirs = subDirs(path);
+        if (dirs.length) {
+          var hd = h('div', 'view-head');
+          hd.appendChild(h('h2', null, '文件夹'));
+          hd.appendChild(h('span', 'n', dirs.length + ' 个'));
+          view.appendChild(hd);
+          for (var j = 0; j < dirs.length; j++) {
+            var name = dirs[j].split('/').pop();
+            var row = h('a', 'folder-row');
+            row.href = '#' + encodeURIComponent(dirs[j]);
+            row.appendChild(h('span', 'ic', '📁'));
+            row.appendChild(h('span', 'nm', name));
+            row.appendChild(h('span', 'ct', countUnder(dirs[j]) + ' 篇'));
+            row.appendChild(h('span', 'ar', '›'));
+            view.appendChild(row);
+          }
+        }
+        // 直属文章
+        var posts = directPosts(path);
+        if (posts.length || !dirs.length) {
+          var ph = h('div', 'view-head');
+          ph.appendChild(h('h2', null, '文章'));
+          ph.appendChild(h('span', 'n', posts.length + ' 篇'));
+          view.appendChild(ph);
+          if (!posts.length) {
+            view.appendChild(h('div', 'empty', '此文件夹暂无直属文章'));
+          } else {
+            var ul = h('ul', 'post-list');
+            for (var k = 0; k < posts.length; k++) {
+              var li = document.createElement('li');
+              var a2 = document.createElement('a');
+              a2.href = posts[k].href;
+              a2.appendChild(h('span', 'post-title', '📄 ' + posts[k].title));
+              if (posts[k].desc) a2.appendChild(h('span', 'post-desc', posts[k].desc));
+              li.appendChild(a2);
+              ul.appendChild(li);
+            }
+            view.appendChild(ul);
+          }
+        }
+      }
+
+      function route() {
+        var raw = decodeURIComponent(location.hash.replace(/^#\/?/, '')).replace(/^\/+|\/+$/g, '');
+        render(raw);
+      }
+      window.addEventListener('hashchange', route);
+      route();
+    })();
+  </script>
 </BaseLayout>
