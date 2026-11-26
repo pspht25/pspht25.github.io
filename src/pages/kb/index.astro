@@ -26,31 +26,38 @@ const entries = (await getCollection('kb', ({ data }) => !data.draft)).sort(
     ))}
   </ul>
 
-  <style>
-    #crumbs { margin: 0 0 14px; font-size: 0.92rem; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  <style is:global>
+    #crumbs { margin: 0 0 14px; font-size: 0.9rem; display: flex; flex-wrap: wrap; gap: 2px; align-items: center; }
     #crumbs:empty { display: none; }
-    #crumbs a { color: var(--fg-muted); text-decoration: none; padding: 3px 8px; border-radius: 8px; }
-    #crumbs a:hover { background: var(--accent-soft); color: var(--accent); }
-    #crumbs .sep { color: var(--fg-muted); opacity: 0.5; }
-    #crumbs .cur { color: var(--fg); font-weight: 600; padding: 3px 8px; }
+    #crumbs a { color: var(--fg-muted); text-decoration: none; padding: 4px 10px; border-radius: 999px; }
+    #crumbs a:hover { background: var(--accent-soft); color: var(--accent); text-decoration: none; }
+    #crumbs .sep { color: var(--fg-muted); opacity: 0.45; padding: 0 2px; }
+    #crumbs .cur { color: var(--accent); font-weight: 600; padding: 4px 10px; background: var(--accent-soft); border-radius: 999px; }
+
+    .view-head { display: flex; align-items: baseline; gap: 10px; margin: 20px 0 12px; }
+    .view-head h2 { font-size: 1.02rem; margin: 0; }
+    .view-head .n { color: var(--fg-muted); font-size: 0.82rem; }
 
     .folder-row {
-      display: flex; align-items: center; gap: 10px;
-      padding: 11px 14px; border: 1px solid var(--border); border-radius: 12px;
-      margin-bottom: 8px; cursor: pointer; text-decoration: none;
-      background: var(--card); color: var(--fg);
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 14px; margin-bottom: 10px;
+      border: 1px solid var(--border); border-radius: 14px;
+      background: var(--card); color: var(--fg); text-decoration: none;
+      box-shadow: var(--shadow);
       transition: border-color 0.15s, transform 0.15s;
     }
-    .folder-row:hover { border-color: var(--accent); transform: translateX(2px); }
-    .folder-row .ic { font-size: 1.15rem; line-height: 1; }
-    .folder-row .nm { flex: 1; font-weight: 600; }
-    .folder-row .ct { color: var(--fg-muted); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
-    .folder-row .ar { color: var(--fg-muted); font-size: 0.85rem; }
+    .folder-row:hover { border-color: var(--accent); transform: translateY(-1px); text-decoration: none; }
+    .folder-row .ic { width: 38px; height: 38px; border-radius: 10px; background: var(--accent-soft); display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+    .folder-row .ic svg { width: 20px; height: 20px; fill: var(--accent); }
+    .folder-row .nm { flex: 1; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .folder-row .ct { color: var(--fg-muted); font-size: 0.82rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .folder-row .ar { color: var(--fg-muted); font-size: 0.9rem; flex: 0 0 auto; }
 
-    .view-head { display: flex; align-items: baseline; justify-content: space-between; margin: 18px 0 10px; }
-    .view-head h2 { font-size: 1.05rem; margin: 0; }
-    .view-head .n { color: var(--fg-muted); font-size: 0.85rem; }
-    .empty { color: var(--fg-muted); padding: 24px 0; text-align: center; }
+    #kb-view .post-list li { border-bottom: 1px dashed var(--border); }
+    #kb-view .post-title { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+    #kb-view .post-title svg { width: 15px; height: 15px; fill: var(--accent); flex: 0 0 auto; }
+
+    .empty { color: var(--fg-muted); padding: 28px 0; text-align: center; font-size: 0.9rem; }
   </style>
 
   <script is:inline>
@@ -84,6 +91,12 @@ const entries = (await getCollection('kb', ({ data }) => !data.draft)).sort(
         return data.filter(function (d) { return d.cat === path; });
       }
 
+      var FOLDER_ICON = 'M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z';
+      var DOC_ICON = 'M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z';
+      function esc(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+
       function h(tag, cls, text) {
         var el = document.createElement(tag);
         if (cls) el.className = cls;
@@ -96,7 +109,8 @@ const entries = (await getCollection('kb', ({ data }) => !data.draft)).sort(
         crumbs.innerHTML = '';
         // 面包屑
         var segs = path ? path.split('/') : [];
-        var rootA = h('a', null, '📁 全部');
+        var rootA = document.createElement('a');
+        rootA.innerHTML = '<svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor;vertical-align:-2px"><path d="' + FOLDER_ICON + '"/></svg> 全部';
         rootA.href = '#';
         crumbs.appendChild(rootA);
         var acc = [];
@@ -122,10 +136,11 @@ const entries = (await getCollection('kb', ({ data }) => !data.draft)).sort(
             var name = dirs[j].split('/').pop();
             var row = h('a', 'folder-row');
             row.href = '#' + encodeURIComponent(dirs[j]);
-            row.appendChild(h('span', 'ic', '📁'));
-            row.appendChild(h('span', 'nm', name));
-            row.appendChild(h('span', 'ct', countUnder(dirs[j]) + ' 篇'));
-            row.appendChild(h('span', 'ar', '›'));
+            row.innerHTML =
+              '<span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + FOLDER_ICON + '"/></svg></span>' +
+              '<span class="nm">' + esc(name) + '</span>' +
+              '<span class="ct">' + countUnder(dirs[j]) + ' 篇</span>' +
+              '<span class="ar">›</span>';
             view.appendChild(row);
           }
         }
@@ -144,8 +159,10 @@ const entries = (await getCollection('kb', ({ data }) => !data.draft)).sort(
               var li = document.createElement('li');
               var a2 = document.createElement('a');
               a2.href = posts[k].href;
-              a2.appendChild(h('span', 'post-title', '📄 ' + posts[k].title));
-              if (posts[k].desc) a2.appendChild(h('span', 'post-desc', posts[k].desc));
+              a2.innerHTML =
+                '<span class="post-title"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + DOC_ICON + '"/></svg>' +
+                esc(posts[k].title) + '</span>' +
+                (posts[k].desc ? '<span class="post-desc">' + esc(posts[k].desc) + '</span>' : '');
               li.appendChild(a2);
               ul.appendChild(li);
             }
