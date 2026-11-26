@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>双边滤波：既平滑又保边 · 经典算法演绎</title>
 <meta name="description" content="面向小白的交互科普：双边滤波为什么能既平滑又保边，权重怎么算、窗口怎么滑动、两个参数怎么调，以及它 1998 年诞生到今天的故事。">
 <link rel="stylesheet" href="../vendor/katex/katex.min.css">
@@ -112,6 +112,13 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 footer{text-align:center;color:var(--muted);font-size:.85rem;padding:30px 0 10px}
 .to-top{position:fixed;right:16px;bottom:16px;z-index:60;width:40px;height:40px;border-radius:50%;border:1px solid var(--border);background:var(--card);color:var(--muted);font-size:1.1rem;cursor:pointer;opacity:0;pointer-events:none;transition:opacity .25s}
 .to-top.show{opacity:1;pointer-events:auto}
+
+/* ---- 移动端适配兜底（页面禁横向拖动，宽内容容器内滚动） ---- */
+@media (max-width:700px){
+  html,body{overflow-x:hidden}
+  table{display:block;width:max-content;max-width:100%;overflow-x:auto}
+  pre{overflow-x:auto}
+}
 </style>
 </head>
 <body>

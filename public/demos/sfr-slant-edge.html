@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>斜边法 SFR 测量 · 四步交互演示</title>
 <style>
 :root{
@@ -68,7 +68,7 @@ nav.steps a{
 nav.steps a:hover{color:var(--ink);text-decoration:none;border-color:var(--ch2)}
 /* 数据流管道 */
 .pipeline{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 18px 10px;margin:0 0 34px;overflow-x:auto}
-.pipeline svg{display:block;min-width:640px;width:100%;height:auto}
+.pipeline{overflow-x:auto}.pipeline svg{display:block;min-width:640px;width:100%;height:auto}
 /* 控制台 */
 .console{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;margin:0 0 14px}
 .console h2{margin:0 0 4px;font-size:17px}
@@ -172,6 +172,13 @@ nav.tocbar a{color:var(--ink2);text-decoration:none;font-size:.82rem;padding:4px
 nav.tocbar a:hover{background:var(--accent-soft);color:var(--accent)}
 nav.tocbar .back{color:var(--accent);font-weight:600;border:1px solid var(--line)}
 section.step{scroll-margin-top:52px}
+
+/* ---- 移动端适配兜底（页面禁横向拖动，宽内容容器内滚动） ---- */
+@media (max-width:700px){
+  html,body{overflow-x:hidden}
+  table{display:block;width:max-content;max-width:100%;overflow-x:auto}
+  pre{overflow-x:auto}
+}
 </style>
 </head>
 <body>
