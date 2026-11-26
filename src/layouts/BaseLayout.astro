@@ -118,5 +118,26 @@ const { title, description } = Astro.props;
 
       enhanceCodeBlocks();
     </script>
+    <script>
+      // 表格增强：thead 表头文本注入 td data-label（窄屏卡片化用），超宽表包滚动容器
+      function enhanceTables() {
+        document.querySelectorAll('.prose table').forEach((t) => {
+          const ths = Array.from(t.querySelectorAll('thead th')).map((th) => (th.textContent ?? '').trim());
+          t.querySelectorAll('tbody tr').forEach((tr) => {
+            Array.from(tr.children).forEach((td, i) => {
+              if (ths[i]) td.setAttribute('data-label', ths[i]);
+            });
+          });
+          t.classList.add('tbl-responsive');
+          if (!t.closest('.table-scroll')) {
+            const wrap = document.createElement('div');
+            wrap.className = 'table-scroll';
+            t.parentNode?.insertBefore(wrap, t);
+            wrap.appendChild(t);
+          }
+        });
+      }
+      enhanceTables();
+    </script>
   </body>
 </html>

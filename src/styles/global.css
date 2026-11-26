@@ -1,4 +1,5 @@
 /* ===== 心屿 · 全局样式（主题与 App 对齐：Material 3 seed #8C6E4A 松烟褐） ===== */
+html, body { overflow-x: hidden; }
 :root {
   color-scheme: light dark;
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
@@ -63,13 +64,15 @@ h2 { font-size: 1.3rem; margin: 1.8rem 0 0.8rem; }
   background: color-mix(in srgb, var(--bg) 82%, transparent);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
+  padding-top: env(safe-area-inset-top, 0px);
 }
 
-.header-inner {
+.header-top {
   display: flex;
   align-items: center;
-  gap: 16px;
-  height: 56px;
+  justify-content: space-between;
+  gap: 12px;
+  height: 48px;
 }
 
 .logo {
@@ -80,32 +83,59 @@ h2 { font-size: 1.3rem; margin: 1.8rem 0 0.8rem; }
 }
 .logo:hover { text-decoration: none; color: var(--accent); }
 
-.site-header nav {
+.header-nav {
   display: flex;
-  gap: 4px;
-  flex: 1;
-  flex-wrap: wrap;
+  gap: 2px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
+.header-nav::-webkit-scrollbar { display: none; }
 
-.site-header nav a {
+.header-nav a {
+  flex: 0 0 auto;
+  min-width: 58px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 10px 6px;
   color: var(--fg-muted);
-  padding: 4px 10px;
-  border-radius: 8px;
-  font-size: 0.95rem;
+  font-size: 0.72rem;
+  border-radius: 10px;
+  position: relative;
 }
-.site-header nav a:hover { color: var(--fg); text-decoration: none; background: var(--bg-soft); }
-.site-header nav a.active { color: var(--accent); background: var(--accent-soft); }
+.header-nav a svg { width: 20px; height: 20px; fill: currentColor; }
+.header-nav a:hover { color: var(--fg); text-decoration: none; background: var(--bg-soft); }
+.header-nav a.active { color: var(--accent); }
+.header-nav a.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 28px;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--accent);
+}
 
 .theme-toggle {
   border: 1px solid var(--border);
   background: var(--card);
-  border-radius: 8px;
+  border-radius: 10px;
   width: 34px;
   height: 34px;
   cursor: pointer;
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   font-size: 1rem;
   line-height: 1;
 }
+.theme-toggle svg { width: 18px; height: 18px; fill: currentColor; }
 .theme-toggle:hover { border-color: var(--accent); }
 
 /* ---- 首页 Hero ---- */
@@ -171,7 +201,23 @@ h2 { font-size: 1.3rem; margin: 1.8rem 0 0.8rem; }
 
 .back { margin: 2rem 0 3rem; font-size: 0.9rem; }
 
-.prose { font-size: 1rem; }
+.prose { font-size: 1rem; overflow-wrap: break-word; }
+/* 表格：桌面正常布局+超宽横滚，窄屏卡片化（表头变字段标签） */
+.prose table { border-collapse: collapse; width: 100%; }
+.prose th, .prose td { border: 1px solid var(--border); padding: 6px 12px; text-align: left; vertical-align: top; word-break: break-word; }
+.prose th { background: var(--bg-soft); font-weight: 600; white-space: normal; }
+.table-scroll { overflow-x: auto; margin: 1rem 0; }
+.prose .table-scroll table { margin: 0; }
+@media (max-width: 640px) {
+  .prose table.tbl-responsive { display: block; width: 100%; }
+  .prose table.tbl-responsive thead { display: none; }
+  .prose table.tbl-responsive tbody, .prose table.tbl-responsive tr, .prose table.tbl-responsive td { display: block; width: 100%; }
+  .prose table.tbl-responsive tr { border: 1px solid var(--border); border-radius: 12px; background: var(--card); padding: 4px 14px; margin-bottom: 10px; }
+  .prose table.tbl-responsive td { border: none; border-bottom: 1px dashed var(--border); padding: 8px 2px; }
+  .prose table.tbl-responsive tr td:last-child { border-bottom: none; }
+  .prose table.tbl-responsive td[data-label]::before { content: attr(data-label); display: block; font-size: 0.72rem; color: var(--accent); font-weight: 600; margin-bottom: 2px; }
+}
+.katex-display { overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
 .prose h2 { margin-top: 2rem; }
 .prose code {
   font-family: var(--font-mono);
@@ -198,7 +244,6 @@ h2 { font-size: 1.3rem; margin: 1.8rem 0 0.8rem; }
   color: var(--fg-muted);
 }
 .prose img { max-width: 100%; border-radius: var(--radius); }
-.prose table { border-collapse: collapse; width: 100%; }
 .prose th, .prose td { border: 1px solid var(--border); padding: 6px 12px; text-align: left; }
 .prose th { background: var(--bg-soft); }
 
@@ -277,21 +322,36 @@ html { scroll-behavior: smooth; }
 }
 .toc:not(.expanded) .toc-panel { display: none; }
 .toc-panel ul { list-style: none; margin: 0; padding: 0; }
+.toc-panel .toc-kids { padding-left: 12px; }
+.toc-row { display: flex; align-items: flex-start; gap: 2px; }
+.toc-arrow {
+  flex: 0 0 auto;
+  border: none; background: none; cursor: pointer;
+  color: var(--fg-muted); font-size: 0.72rem; line-height: 1.5;
+  width: 18px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; border-radius: 6px;
+  transition: transform 0.15s;
+}
+.toc-arrow:hover { color: var(--accent); background: var(--accent-soft); }
+li.toc-collapsed > .toc-kids { display: none; }
+li.toc-collapsed > .toc-row .toc-arrow { transform: rotate(-90deg); }
 .toc-item a {
   display: block;
-  padding: 3px 14px;
-  font-size: 0.82rem;
+  padding: 3px 10px 3px 6px;
+  font-size: 0.8rem;
   color: var(--fg-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
-.toc-h3 a { padding-left: 28px; font-size: 0.78rem; }
 .toc-item a:hover { color: var(--accent); text-decoration: none; }
 .toc-item a.active { color: var(--accent); font-weight: 600; }
 
 @media (max-width: 1180px) {
-  .toc { right: 16px; bottom: 18px; top: auto; width: auto; }
+  .toc { right: 16px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); top: auto; width: auto; }
   .toc-panel {
     position: absolute;
     bottom: 42px;
@@ -306,6 +366,7 @@ html { scroll-behavior: smooth; }
   margin-top: 4rem;
   border-top: 1px solid var(--border);
   padding: 1.4rem 0 2rem;
+  padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
   color: var(--fg-muted);
   font-size: 0.85rem;
   text-align: center;
