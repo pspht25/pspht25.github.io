@@ -3,73 +3,46 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 ---
 
 <BaseLayout
-  title="Python IDE"
-  description="IDE 风格的本地 Python 编辑器：打开本地文件夹作为工作目录，多标签语法高亮编辑，py2js 毫秒级转译执行；代码不上传服务器，本地缓存随时可清除"
+  title="Python 速算台"
+  description="粘贴 Python 代码，本地毫秒级转译执行：语法高亮、行号、Ctrl+Enter 运行；零依赖零上传，离线可用"
 >
-  <h1>🗂️ Python IDE</h1>
+  <h1>🐍 Python 速算台</h1>
 
   <div class="intro">
-    <p><b>IDE 风格的本地 Python 编辑器</b>：打开你电脑上的任意文件夹作为工作目录，左侧浏览文件、中间多标签编辑（语法高亮 / 行号 / Tab 缩进），<kbd>Ctrl</kbd>+<kbd>Enter</kbd> 用本站自研的 py2js 毫秒级转译执行。<b>代码不上传任何服务器</b>——文件读写只发生在你的浏览器和本地磁盘之间。</p>
-    <p class="muted">🔒 隐私说明：① 「打开文件夹」是浏览器原生的本地授权（File System Access API），页面代码只能访问你选中的那个目录；② 目录连接记忆与未保存内容仅存于浏览器本地缓存（IndexedDB / localStorage），不会同步到云端；③ 左下角「清除本地缓存」可随时一键清空——只清浏览器缓存，<b>不会删除磁盘上的文件</b>。</p>
-    <p class="muted">⚙️ 运行引擎为 py2js（毫秒级静态转译，无需下载 13 MB 运行时），支持 Python 常用子集：变量 / 流程控制 / 函数 / 类 / 列表字典 / 推导式 / f-string / import math 等；不支持第三方库、input() 交互与 open() 文件读写。「查看 JS」可看到转译产物。文件夹功能需 Chrome / Edge 桌面版；Firefox / Safari 自动降级为纯编辑缓冲模式（新建脚本 + 运行）。</p>
+    <p><b>粘贴即跑的本地 Python 执行器</b>：把代码贴进编辑器，点「运行」或 <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 立即执行。<b>代码不上传任何服务器</b>——运行由本站自研的 py2js 引擎在浏览器内完成（毫秒级静态转译，无需下载运行时）。草稿自动保存在浏览器本地，刷新不丢。</p>
+    <p class="muted">⚙️ 支持 Python 常用子集：变量 / 流程控制 / 函数 / 类 / 列表字典 / 推导式 / f-string / import math 等；不支持第三方库、input() 交互与 open() 文件读写。「查看 JS」可看到转译产物。</p>
   </div>
 
-  <div id="compat" class="compat" hidden>
-    当前浏览器不支持「本地文件夹」能力（需要 Chrome / Edge 桌面版的 File System Access API）。仍可使用纯编辑缓冲模式：点「＋ 新建」写代码、Ctrl+Enter 运行；保存到磁盘请在 Chrome/Edge 中打开本页。
-  </div>
-
-  <div class="ide">
-    <aside class="side">
-      <div class="side-head">
-        <button id="btnOpen" class="btn">📂 打开文件夹</button>
-        <button id="btnReconnect" class="btn ghost" hidden>🔌 重连</button>
-      </div>
-      <div id="tree" class="tree"></div>
-      <div class="side-foot">
-        <div class="dir" id="dirName">未连接</div>
-        <button id="btnWipe" class="btn danger" title="清除本工具的浏览器缓存（不会删除磁盘文件）">🗑 清除本地缓存</button>
-      </div>
-    </aside>
-
-    <div class="main">
-      <div id="tabs" class="tabs"></div>
-      <div class="editor">
-        <div id="gutter" class="gutter" aria-hidden="true">1</div>
-        <div class="hl-wrap">
-          <pre class="hl" id="hl" aria-hidden="true"><code></code></pre>
-          <textarea
-            id="code"
-            spellcheck="false"
-            autocapitalize="off"
-            autocomplete="off"
-            placeholder="新建脚本、或从左侧打开 .py 文件开始编辑…（Ctrl+Enter 运行）"
-            aria-label="Python 代码"
-          ></textarea>
-        </div>
-      </div>
-      <div class="statusbar">
-        <span id="stFile">未打开文件</span>
-        <span id="stPos">1:1</span>
-        <span id="stState"></span>
-        <span class="grow"></span>
-        <span id="stPy">py2js 未加载 · 运行时自动加载</span>
-      </div>
+  <div class="editor">
+    <div id="gutter" class="gutter" aria-hidden="true">1</div>
+    <div class="hl-wrap">
+      <pre class="hl" id="hl" aria-hidden="true"><code></code></pre>
+      <textarea
+        id="code"
+        spellcheck="false"
+        autocapitalize="off"
+        autocomplete="off"
+        placeholder="粘贴或输入 Python 代码…（Ctrl+Enter 运行）"
+        aria-label="Python 代码"
+      ></textarea>
     </div>
+  </div>
+  <div class="statusbar">
+    <span id="stPos">1:1</span>
+    <span class="grow"></span>
+    <span id="stPy">py2js 未加载 · 运行时自动加载</span>
   </div>
 
   <div class="toolbar">
     <button id="btnRun" class="btn run">▶ 运行 <span class="kbd">Ctrl↵</span></button>
-    <button id="btnSave" class="btn">💾 保存 <span class="kbd">Ctrl+S</span></button>
     <button id="btnViewJs" class="btn ghost">查看 JS</button>
-    <span class="sep"></span>
-    <button id="btnNew" class="btn ghost">＋ 新建</button>
     <button id="btnDemo" class="btn ghost">示例</button>
     <button id="btnClear" class="btn ghost">清空输出</button>
     <span id="elapsed" class="elapsed"></span>
   </div>
 
   <div class="output">
-    <div id="out"><div class="out-empty">输出显示在这里。新建脚本或从左侧打开 .py，按 Ctrl+Enter 运行。</div></div>
+    <div id="out"><div class="out-empty">输出显示在这里。粘贴代码后按 Ctrl+Enter 或点「运行」。</div></div>
   </div>
 </BaseLayout>
 
@@ -93,120 +66,10 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     background: var(--bg-soft);
   }
 
-  .compat {
-    background: rgba(217, 119, 6, 0.08);
-    border: 1px solid rgba(217, 119, 6, 0.4);
-    color: #b45309;
-    border-radius: 12px;
-    padding: 12px 16px;
-    font-size: 0.88rem;
-    margin-top: 12px;
-    line-height: 1.7;
-  }
-
-  /* ---- IDE 三栏骨架 ---- */
-  .ide {
-    display: grid;
-    grid-template-columns: 240px minmax(0, 1fr);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    background: var(--bg-soft);
-    overflow: hidden;
-    box-shadow: var(--shadow);
-    margin-top: 14px;
-    min-height: 540px;
-  }
-  .side {
-    border-right: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    background: var(--card);
-    min-width: 0;
-  }
-  .side-head {
-    padding: 10px;
-    display: flex;
-    gap: 6px;
-    border-bottom: 1px solid var(--border);
-  }
-  .side-head .btn { flex: 1; font-size: 0.82rem; padding: 7px 8px; }
-  .tree { flex: 1; overflow: auto; padding: 6px 4px 10px; }
-  .tree-hint {
-    color: var(--fg-muted);
-    font-size: 0.8rem;
-    padding: 14px 12px;
-    line-height: 1.8;
-  }
-  .tree-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-family: var(--font-mono);
-    font-size: 0.8rem;
-    white-space: nowrap;
-    overflow: hidden;
-  }
-  .tree-row:hover { background: var(--bg-soft); }
-  .tree-row .tw { flex: none; width: 14px; color: var(--fg-muted); font-size: 0.7rem; }
-  .tree-row .ic { flex: none; font-size: 0.85rem; }
-  .tree-row .nm { overflow: hidden; text-overflow: ellipsis; }
-  .tree-empty { color: var(--fg-muted); font-size: 0.75rem; padding: 2px 8px 2px 34px; }
-  .side-foot { border-top: 1px solid var(--border); padding: 10px; }
-  .side-foot .dir {
-    font-family: var(--font-mono);
-    font-size: 0.78rem;
-    color: var(--fg-muted);
-    margin-bottom: 8px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .btn.danger {
-    color: #dc2626;
-    border-color: rgba(220, 38, 38, 0.4);
-    width: 100%;
-    font-size: 0.8rem;
-    padding: 6px 8px;
-  }
-  .btn.danger:hover { border-color: #dc2626; background: rgba(220, 38, 38, 0.06); }
-
-  .main { display: flex; flex-direction: column; min-width: 0; }
-  .tabs {
-    display: flex;
-    gap: 4px;
-    padding: 8px 8px 0;
-    overflow-x: auto;
-    border-bottom: 1px solid var(--border);
-    min-height: 42px;
-    align-items: flex-end;
-  }
-  .tab-empty { color: var(--fg-muted); font-size: 0.8rem; padding: 8px 4px; }
-  .tab {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
-    border: 1px solid var(--border);
-    border-bottom: none;
-    border-radius: 10px 10px 0 0;
-    background: var(--bg);
-    cursor: pointer;
-    font-family: var(--font-mono);
-    font-size: 0.78rem;
-    white-space: nowrap;
-    color: var(--fg-muted);
-  }
-  .tab.on { background: var(--bg-soft); color: var(--fg); border-color: var(--accent); }
-  .tab-x { opacity: 0.55; padding: 0 2px; }
-  .tab-x:hover { opacity: 1; color: #dc2626; }
-
-  .editor { flex: 1; display: flex; min-height: 340px; }
+  .editor { display: flex; min-height: 320px; margin-top: 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-soft); overflow: hidden; box-shadow: var(--shadow); }
   .gutter {
     flex: none;
-    width: 48px;
+    width: 46px;
     overflow: hidden;
     padding: 14px 10px 14px 0;
     font-family: var(--font-mono);
@@ -272,18 +135,15 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     align-items: center;
     gap: 12px;
     padding: 7px 14px;
-    border-top: 1px solid var(--border);
     font-family: var(--font-mono);
     font-size: 0.75rem;
     color: var(--fg-muted);
     flex-wrap: wrap;
   }
   .statusbar .grow { flex: 1; }
-  #stState.dirty { color: #d97706; }
   #stPy.ready { color: #16a34a; }
   #stPy.error { color: #dc2626; }
 
-  /* ---- 工具栏与输出 ---- */
   .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
   .btn {
     font-family: var(--font-sans);
@@ -308,7 +168,6 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     padding: 0 4px;
     margin-left: 4px;
   }
-  .sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
   .elapsed { color: var(--fg-muted); font-size: 0.82rem; font-family: var(--font-mono); margin-left: auto; }
 
   .output {
@@ -347,58 +206,33 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     margin: 6px 0;
   }
 
-  @media (max-width: 860px) {
-    .ide { grid-template-columns: 1fr; min-height: 0; }
-    .side { border-right: none; border-bottom: 1px solid var(--border); max-height: 300px; }
-    .tree { max-height: 170px; }
-    .editor { min-height: 300px; }
+  @media (max-width: 640px) {
+    .editor { min-height: 260px; }
+    .gutter { width: 38px; padding-right: 6px; }
+    .btn { padding: 10px 14px; }
   }
 </style>
 
 <script>
-  // py-ide 入口：状态管理 + DOM 渲染粘合层（文件系统 / 存储 / 高亮见 src/scripts/py-ide/）
+  // py-ide 精简版（粘贴即跑）：单缓冲 + 高亮 + 本地草稿；文件系统/多标签见 git 历史版本
   import { hlPython } from '../../scripts/py-ide/highlight.js';
-  import {
-    lsGet, lsSet, lsDel, lsWipe, lsKeys, bufKey, BUF_LS_PREFIX, idbWipe,
-  } from '../../scripts/py-ide/storage.js';
-  import {
-    hasFSA, pickDirectory, ensurePerm, buildTree, readTextFile, saveTextFile,
-    mkpath, rememberDir, recallDir, forgetDir, PY_EXT, TEXT_EXT,
-  } from '../../scripts/py-ide/vfs.js';
 
   const $ = (id) => document.getElementById(id);
   const codeEl = $('code');
   const hlEl = $('hl');
   const hlCode = hlEl.querySelector('code');
   const gutter = $('gutter');
-  const tabsEl = $('tabs');
-  const treeEl = $('tree');
   const outEl = $('out');
   const elapsedEl = $('elapsed');
-  const stFile = $('stFile');
   const stPos = $('stPos');
-  const stState = $('stState');
   const stPy = $('stPy');
-  const dirNameEl = $('dirName');
-  const compatEl = $('compat');
-  const btnOpen = $('btnOpen');
-  const btnReconnect = $('btnReconnect');
-  const btnWipe = $('btnWipe');
   const btnRun = $('btnRun');
-  const btnSave = $('btnSave');
   const btnViewJs = $('btnViewJs');
-  const btnNew = $('btnNew');
   const btnDemo = $('btnDemo');
   const btnClear = $('btnClear');
 
-  // ---- 状态 ----
-  let dirRoot = null; // FileSystemDirectoryHandle（工作目录）
-  let treeRoot = null; // buildTree 结果
-  const expanded = new Set(['']);
-  let bufs = []; // { path, text, dirty, fileHandle, dirHandle }
-  let active = -1;
+  const LS_KEY = 'pyide-scratch';
   let pyState = 'idle'; // idle | loading | ready | error
-  let untitledSeq = 1;
 
   const msg = (e) => (e && e.message ? e.message : String(e));
 
@@ -493,28 +327,23 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     elapsedEl.textContent = '转译+运行 ' + tMs.toFixed(1) + ' ms';
   }
 
-  function runActive() {
-    const b = bufs[active];
-    if (!b) {
-      sysLine('先新建或打开一个 .py 文件');
-      return;
-    }
-    if (!PY_EXT.test(b.path)) {
-      sysLine('仅 .py 文件可运行（当前：' + b.path + '）；该文件仍可编辑与保存');
-      return;
-    }
+  function run() {
     const src = codeEl.value;
+    if (!src.trim()) {
+      sysLine('编辑器是空的——粘贴代码后再运行');
+      return;
+    }
     ensurePy(() => doRun(src));
   }
 
   function viewJs() {
-    const b = bufs[active];
-    if (!b) {
-      sysLine('先新建或打开一个脚本');
+    const src = codeEl.value;
+    if (!src.trim()) {
+      sysLine('编辑器是空的——先粘贴代码');
       return;
     }
     ensurePy(() => {
-      const r = window.PY2JS.transpile(b.text);
+      const r = window.PY2JS.transpile(src);
       if (r.errors && r.errors.length) {
         r.errors.forEach((e) => addLine('行 ' + e.line + ': ' + (e.msg != null ? e.msg : e.message), 'err'));
         return;
@@ -539,434 +368,78 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
     const rows = codeEl.value.slice(0, s).split('\n');
     stPos.textContent = rows.length + ':' + (rows[rows.length - 1].length + 1);
   }
-  function updateStatus() {
-    const b = bufs[active];
-    stFile.textContent = b ? b.path : '未打开文件';
-    if (b && b.dirty) {
-      stState.textContent = '● 未保存';
-      stState.className = 'dirty';
-    } else {
-      stState.textContent = b ? '已保存' : '';
-      stState.className = '';
-    }
-  }
   function refreshEditorUI() {
     syncHl();
     syncGutter();
     updatePos();
-    updateStatus();
+  }
+  function saveDraft() {
+    try { localStorage.setItem(LS_KEY, codeEl.value); } catch (_) { /* 忽略配额错误 */ }
   }
 
-  // ---- 标签页 ----
-  function renderTabs() {
-    tabsEl.innerHTML = '';
-    if (!bufs.length) {
-      const sp = document.createElement('span');
-      sp.className = 'tab-empty';
-      sp.textContent = '未打开文件 —— 「＋ 新建」或从左侧打开 .py';
-      tabsEl.appendChild(sp);
-      return;
-    }
-    bufs.forEach((b, i) => {
-      const t = document.createElement('div');
-      t.className = 'tab' + (i === active ? ' on' : '');
-      t.title = b.path + (b.dirty ? '（未保存）' : '');
-      const nm = document.createElement('span');
-      nm.textContent = (b.dirty ? '● ' : '') + b.path.split('/').pop();
-      t.appendChild(nm);
-      const x = document.createElement('span');
-      x.className = 'tab-x';
-      x.textContent = '✕';
-      x.title = '关闭标签';
-      x.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        closeTab(i);
-      });
-      t.appendChild(x);
-      t.addEventListener('click', () => activate(i));
-      tabsEl.appendChild(t);
-    });
-  }
-  function activate(i) {
-    active = i;
-    const b = bufs[i];
-    codeEl.value = b.text;
-    renderTabs();
-    refreshEditorUI();
-    codeEl.focus();
-  }
-  function closeTab(i) {
-    const b = bufs[i];
-    if (b.dirty && !window.confirm('「' + b.path + '」有未保存修改。\n关闭标签将丢弃这些修改（本地暂存也会清除），确定？')) return;
-    lsDel(bufKey(b.path));
-    bufs.splice(i, 1);
-    if (!bufs.length) active = -1;
-    else active = Math.min(active, bufs.length - 1);
-    codeEl.value = active >= 0 ? bufs[active].text : '';
-    renderTabs();
-    refreshEditorUI();
-  }
-  function pushBuf(b) {
-    bufs.push(b);
-    activate(bufs.length - 1);
-  }
-
-  // ---- 文件树 ----
-  function iconFor(name) {
-    if (/\.py$/i.test(name)) return '🐍';
-    if (/\.(md|txt|log)$/i.test(name)) return '📝';
-    if (/\.json$/i.test(name)) return '🗂️';
-    if (/\.(js|mjs|cjs|ts)$/i.test(name)) return '📜';
-    if (/\.(html|css|astro)$/i.test(name)) return '🌐';
-    if (/\.(csv|tsv|yaml|yml|toml|ini|cfg|conf)$/i.test(name)) return '📊';
-    return '📄';
-  }
-  function renderTree() {
-    treeEl.innerHTML = '';
-    if (!treeRoot) {
-      const hint = document.createElement('div');
-      hint.className = 'tree-hint';
-      hint.innerHTML = '尚未打开文件夹。<br>点上方「📂 打开文件夹」选择本地目录作为工作区——<b>文件不经过任何服务器</b>。';
-      treeEl.appendChild(hint);
-      return;
-    }
-    const frag = document.createDocumentFragment();
-    const emit = (node, depth) => {
-      const row = document.createElement('div');
-      row.className = 'tree-row';
-      row.style.paddingLeft = 6 + depth * 14 + 'px';
-      const tw = document.createElement('span');
-      tw.className = 'tw';
-      const ic = document.createElement('span');
-      ic.className = 'ic';
-      const nm = document.createElement('span');
-      nm.className = 'nm';
-      nm.textContent = node.name;
-      if (node.kind === 'dir') {
-        const open = expanded.has(node.path);
-        tw.textContent = open ? '▾' : '▸';
-        ic.textContent = open ? '📂' : '📁';
-        row.append(tw, ic, nm);
-        row.title = node.path;
-        row.addEventListener('click', () => {
-          if (expanded.has(node.path)) expanded.delete(node.path);
-          else expanded.add(node.path);
-          renderTree();
-        });
-        frag.appendChild(row);
-        if (open) {
-          if (node.children && node.children.length) node.children.forEach((c) => emit(c, depth + 1));
-          else {
-            const e = document.createElement('div');
-            e.className = 'tree-empty';
-            e.textContent = '（空目录）';
-            frag.appendChild(e);
-          }
-        }
-      } else {
-        tw.textContent = ' ';
-        ic.textContent = iconFor(node.name);
-        row.append(tw, ic, nm);
-        row.title = node.path + ' —— 点击打开';
-        row.addEventListener('click', () => openNode(node));
-        frag.appendChild(row);
-      }
-    };
-    if (treeRoot.children.length) treeRoot.children.forEach((c) => emit(c, 0));
-    else {
-      const e = document.createElement('div');
-      e.className = 'tree-empty';
-      e.textContent = '（空目录）';
-      frag.appendChild(e);
-    }
-    treeEl.appendChild(frag);
-  }
-  async function refreshTree() {
-    if (!dirRoot) return;
-    treeRoot = await buildTree(dirRoot);
-    renderTree();
-  }
-
-  // ---- 打开 / 保存 ----
-  async function openNode(node) {
-    if (!TEXT_EXT.test(node.name)) {
-      sysLine('暂不支持编辑该类型：' + node.name + '（支持文本类文件：py / txt / md / json / js / html / css …）');
-      return;
-    }
-    const idx = bufs.findIndex((b) => b.path === node.path);
-    if (idx >= 0) {
-      activate(idx);
-      return;
-    }
-    const r = await readTextFile(node.handle);
-    if (!r.ok) {
-      sysLine(r.err);
-      return;
-    }
-    let text = r.text;
-    let dirty = false;
-    const saved = lsGet(bufKey(node.path));
-    if (saved != null && saved !== r.text) {
-      text = saved;
-      dirty = true;
-      sysLine('已恢复「' + node.path + '」未保存的修改（暂存内容优先显示，Ctrl+S 覆盖磁盘）');
-    }
-    const loc = dirRoot ? await mkpath(dirRoot, node.path, false) : null;
-    pushBuf({
-      path: node.path,
-      text,
-      dirty,
-      fileHandle: node.handle,
-      dirHandle: loc ? loc.dir : null,
-    });
-  }
-
-  async function saveActive() {
-    const b = bufs[active];
-    if (!b) {
-      sysLine('没有可保存的标签页');
-      return;
-    }
-    if (!dirRoot) {
-      sysLine('尚未连接工作目录：点左侧「📂 打开文件夹」后再保存；或直接运行（运行不要求保存）');
-      return;
-    }
-    try {
-      if (!b.fileHandle) {
-        const rel = window.prompt('保存为（相对工作目录的路径，可用子目录，如 src/main.py）：', b.path);
-        if (rel == null) return;
-        const loc = await mkpath(dirRoot, rel, true);
-        if (!loc) {
-          sysLine('路径无效或创建失败：' + rel);
-          return;
-        }
-        b.fileHandle = await loc.dir.getFileHandle(loc.name, { create: true });
-        b.dirHandle = loc.dir;
-        b.path = loc.rel;
-      }
-      const ok = await ensurePerm(b.dirHandle || dirRoot);
-      if (!ok) {
-        sysLine('未获得目录写权限，保存取消');
-        return;
-      }
-      const r = await saveTextFile(b.fileHandle, b.text);
-      if (!r.ok) {
-        sysLine(r.err);
-        return;
-      }
-      b.dirty = false;
-      lsDel(bufKey(b.path));
-      renderTabs();
-      updateStatus();
-      sysLine('已保存：' + b.path + '（写入本地磁盘）');
-      refreshTree();
-    } catch (e) {
-      sysLine('保存失败：' + msg(e));
-    }
-  }
-
-  function newBuf() {
-    let name;
-    do {
-      name = 'untitled-' + untitledSeq++ + '.py';
-    } while (bufs.some((b) => b.path === name));
-    pushBuf({ path: name, text: '', dirty: true, fileHandle: null, dirHandle: null });
-  }
-
+  // ---- 示例 ----
   const DEMO_SRC = `import math
 
-# py2js：毫秒级转译执行 Python 子集（Ctrl+Enter 运行）
-def is_prime(n):
-    if n < 2:
-        return False
-    for i in range(2, int(math.sqrt(n)) + 1):
-        if n % i == 0:
-            return False
-    return True
+# py2js：毫秒级转译执行 Python 常用子集
+def fib(n):
+    a, b = 0, 1
+    for _ in range(n):
+        a, b = b, a + b
+    return a
 
-primes = [p for p in range(2, 50) if is_prime(p)]
-print("50 以内的素数：", primes)
+print("斐波那契前 10 项:", [fib(i) for i in range(10)])
 
-class Point:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-    def dist(self):
-        return math.sqrt(self.x ** 2 + self.y ** 2)
-
-pts = [Point(3, 4), Point(6, 8)]
-print("到原点距离：", [round(p.dist(), 2) for p in pts])
-print(f"共 {len(pts)} 个点, pi ≈ {math.pi:.4f}")
+d = {"x": 3.14, "names": ["心屿", "py2js"]}
+print(f"圆周率≈{d['x']:.2f}, 共 {len(d['names'])} 项")
+print("sqrt(2) =", round(math.sqrt(2), 6))
 `;
-  function loadDemo() {
-    const idx = bufs.findIndex((b) => b.path === 'demo.py');
-    if (idx >= 0) {
-      activate(idx);
-      return;
-    }
-    pushBuf({ path: 'demo.py', text: DEMO_SRC, dirty: true, fileHandle: null, dirHandle: null });
-    sysLine('示例已打开，Ctrl+Enter 运行；「查看 JS」可看转译产物');
-  }
 
-  // ---- 目录连接 ----
-  async function connectDir(h, name, silent) {
-    dirRoot = h;
-    dirNameEl.textContent = name;
-    dirNameEl.title = name;
-    btnReconnect.hidden = true;
-    await rememberDir(h, name);
-    await refreshTree();
-    if (!silent) sysLine('已连接工作目录：' + name + '（文件只在你本地读写，不上传）');
-  }
-  async function onOpen() {
-    if (!hasFSA) {
-      compatEl.hidden = false;
-      return;
-    }
-    const h = await pickDirectory();
-    if (!h) return;
-    await connectDir(h, h.name || '已选目录');
-  }
-  function restoreBufs() {
-    const keys = lsKeys().filter((k) => k.indexOf(BUF_LS_PREFIX) === 0);
-    keys.sort();
-    for (const full of keys) {
-      const path = full.slice(BUF_LS_PREFIX.length);
-      const text = lsGet('buf:' + path);
-      if (text != null) bufs.push({ path, text, dirty: true, fileHandle: null, dirHandle: null });
-    }
-    if (bufs.length) {
-      activate(0);
-      sysLine('已恢复 ' + bufs.length + ' 个未保存的标签页（来自本地暂存）');
-    }
-  }
-  async function tryRestore() {
-    restoreBufs();
-    if (!hasFSA) {
-      compatEl.hidden = false;
-      btnOpen.disabled = true;
-      btnOpen.title = '当前浏览器不支持';
-      return;
-    }
-    const rec = await recallDir();
-    if (!rec) return;
-    try {
-      const st = await rec.handle.queryPermission({ mode: 'readwrite' });
-      if (st === 'granted') {
-        await connectDir(rec.handle, rec.name, true);
-        sysLine('已自动重连上次工作目录：' + rec.name);
-      } else if (st === 'prompt') {
-        btnReconnect.hidden = false;
-        btnReconnect.textContent = '🔌 重连：' + rec.name;
-        btnReconnect.title = '上次的工作目录需要重新授权后连接';
-      }
-    } catch (e) {
-      await forgetDir();
-    }
-  }
-
-  // ---- 清除本地缓存 ----
-  btnWipe.addEventListener('click', async () => {
-    const n = bufs.filter((b) => b.dirty).length;
-    const m =
-      '清除本工具在浏览器里的全部本地缓存？\n\n' +
-      '· 工作目录连接记忆\n· 未保存内容的本地暂存' +
-      (n ? '\n\n注意：当前有 ' + n + ' 个未保存的标签页，其暂存内容将被清空' : '') +
-      '\n\n磁盘上的文件不会被改动。';
-    if (!window.confirm(m)) return;
-    await forgetDir();
-    const idbOk = await idbWipe();
-    lsWipe();
-    dirRoot = null;
-    treeRoot = null;
-    bufs = [];
-    active = -1;
-    expanded.clear();
-    codeEl.value = '';
+  // ---- 事件绑定 ----
+  codeEl.addEventListener('input', () => {
     refreshEditorUI();
-    renderTabs();
-    renderTree();
-    dirNameEl.textContent = '未连接';
-    btnReconnect.hidden = true;
-    sysLine('本地缓存已清除（IndexedDB ' + (idbOk ? '已删除' : '被占用，记录已清') + ' + localStorage）。磁盘文件未受影响。');
+    saveDraft();
   });
-
-  // ---- 编辑器事件 ----
-  let stageTimer = null;
-  function onEdit() {
-    const b = bufs[active];
-    if (!b) return;
-    b.text = codeEl.value;
-    if (!b.dirty) b.dirty = true;
-    renderTabs();
-    syncHl();
-    syncGutter();
-    updatePos();
-    updateStatus();
-    clearTimeout(stageTimer);
-    stageTimer = setTimeout(() => lsSet(bufKey(b.path), b.text), 400);
-  }
-  codeEl.addEventListener('input', onEdit);
   codeEl.addEventListener('scroll', () => {
     hlEl.scrollTop = codeEl.scrollTop;
     hlEl.scrollLeft = codeEl.scrollLeft;
     gutter.scrollTop = codeEl.scrollTop;
   });
-  codeEl.addEventListener('keyup', updatePos);
-  codeEl.addEventListener('click', updatePos);
   codeEl.addEventListener('keydown', (e) => {
-    if (e.key !== 'Tab') return;
-    e.preventDefault();
-    const s = codeEl.selectionStart;
-    const t = codeEl.selectionEnd;
-    if (e.shiftKey) {
-      const ls = codeEl.value.lastIndexOf('\n', s - 1) + 1;
-      const lead = codeEl.value.slice(ls).match(/^ {1,4}/);
-      if (lead) {
-        codeEl.setRangeText('', ls, ls + lead[0].length, 'end');
-        onEdit();
-      }
-    } else {
-      codeEl.setRangeText('    ', s, t, 'end');
-      onEdit();
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      run();
+      return;
+    }
+    // Tab 插入 4 空格（Shift+Tab 缩进一级略，保持简单）
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const s = codeEl.selectionStart;
+      const epos = codeEl.selectionEnd;
+      codeEl.value = codeEl.value.slice(0, s) + '    ' + codeEl.value.slice(epos);
+      codeEl.selectionStart = codeEl.selectionEnd = s + 4;
+      refreshEditorUI();
+      saveDraft();
     }
   });
-
-  window.addEventListener('keydown', (e) => {
-    const mod = e.ctrlKey || e.metaKey;
-    if (!mod) return;
-    if (e.key === 's' || e.key === 'S') {
-      e.preventDefault();
-      saveActive();
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      runActive();
-    }
-  });
-
-  // ---- 按钮 ----
-  btnRun.addEventListener('click', runActive);
-  btnSave.addEventListener('click', saveActive);
+  btnRun.addEventListener('click', run);
   btnViewJs.addEventListener('click', viewJs);
-  btnNew.addEventListener('click', newBuf);
-  btnDemo.addEventListener('click', loadDemo);
-  btnOpen.addEventListener('click', onOpen);
-  btnReconnect.addEventListener('click', async () => {
-    const rec = await recallDir();
-    if (!rec) return;
-    const ok = await ensurePerm(rec.handle);
-    if (ok) await connectDir(rec.handle, rec.name);
-    else sysLine('未获得授权，无法重连（可在浏览器站点设置里重置权限后再试）');
+  btnDemo.addEventListener('click', () => {
+    if (codeEl.value.trim() && !window.confirm('载入示例将覆盖当前编辑器内容，继续？')) return;
+    codeEl.value = DEMO_SRC;
+    refreshEditorUI();
+    saveDraft();
+    codeEl.focus();
   });
   btnClear.addEventListener('click', () => {
     outEl.innerHTML = '<div class="out-empty">输出已清空。</div>';
     elapsedEl.textContent = '';
   });
 
-  // ---- 启动 ----
-  setPyStatus();
-  renderTabs();
-  renderTree();
+  // ---- 初始化：恢复草稿 ----
+  try {
+    const saved = localStorage.getItem(LS_KEY);
+    if (saved) codeEl.value = saved;
+  } catch (_) { /* 忽略 */ }
   refreshEditorUI();
-  tryRestore();
+  codeEl.focus();
 </script>
