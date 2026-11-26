@@ -6,22 +6,56 @@ interface Props {
 }
 
 const { headings } = Astro.props;
-const items = headings.filter((h) => h.depth === 2 || h.depth === 3);
+const MAX_DEPTH = 6; // h2–h6，共五级
+
+interface TocNode {
+  h: MarkdownHeading;
+  kids: TocNode[];
+}
+
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// 按 depth 建树（栈式）
+const root: TocNode[] = [];
+const stack: { depth: number; kids: TocNode[] }[] = [{ depth: 1, kids: root }];
+for (const hd of headings) {
+  if (hd.depth < 2 || hd.depth > MAX_DEPTH) continue;
+  const node: TocNode = { h: hd, kids: [] };
+  while (stack.length > 1 && stack[stack.length - 1].depth >= hd.depth) stack.pop();
+  stack[stack.length - 1].kids.push(node);
+  stack.push({ depth: hd.depth, kids: node.kids });
+}
+
+function renderNodes(nodes: TocNode[]): string {
+  if (!nodes.length) return '';
+  const li = nodes
+    .map((n) => {
+      const hasKids = n.kids.length > 0;
+      const row = `<div class="toc-row">${
+        hasKids
+          ? `<button type="button" class="toc-arrow" aria-label="展开/收起" aria-expanded="true">▼</button>`
+          : `<span class="toc-arrow toc-arrow-blank"></span>`
+      }<a href="#${n.h.slug}">${esc(n.h.text)}</a></div>${
+        hasKids ? `<ul class="toc-kids">${renderNodes(n.kids)}</ul>` : ''
+      }`;
+      return `<li class="toc-item${hasKids ? '' : ' toc-leaf'}">${row}</li>`;
+    })
+    .join('');
+  return li;
+}
+
+const treeHtml = root.length ? `<ul>${renderNodes(root)}</ul>` : '';
 ---
 
-{items.length > 0 && (
+{treeHtml && (
   <div class="toc" id="toc">
     <button type="button" class="toc-toggle" id="toc-toggle" aria-expanded="false">
       📑 目录
     </button>
     <nav class="toc-panel" id="toc-panel" aria-label="文章目录">
-      <ul>
-        {items.map((h) => (
-          <li class={`toc-item toc-h${h.depth}`}>
-            <a href={`#${h.slug}`}>{h.text}</a>
-          </li>
-        ))}
-      </ul>
+      <Fragment set:html={treeHtml} />
     </nav>
   </div>
 )}
@@ -30,7 +64,7 @@ const items = headings.filter((h) => h.depth === 2 || h.depth === 3);
   const toc = document.getElementById('toc');
 
   if (toc) {
-    const btn = document.getElementById('toc-toggle')!;
+    const btn = document.getElementById('toc-toggle') as HTMLButtonElement;
     const panel = document.getElementById('toc-panel')!;
 
     const isNarrow = () => window.innerWidth <= 1180;
@@ -54,7 +88,21 @@ const items = headings.filter((h) => h.depth === 2 || h.depth === 3);
       setExpanded(!toc.classList.contains('expanded'));
     });
 
-    // 滚动高亮当前章节
+    // 展开收缩：点箭头折叠/展开该节点的子目录
+    panel.addEventListener('click', (e) => {
+      const t = e.target as HTMLElement;
+      const arrow = t.closest<HTMLButtonElement>('.toc-arrow');
+      if (arrow && !arrow.classList.contains('toc-arrow-blank')) {
+        const li = arrow.closest('li');
+        if (li) {
+          li.classList.toggle('toc-collapsed');
+          arrow.setAttribute('aria-expanded', li.classList.contains('toc-collapsed') ? 'false' : 'true');
+        }
+        e.preventDefault();
+      }
+    });
+
+    // 滚动高亮当前章节（并自动展开其父级链）
     const links = Array.from(panel.querySelectorAll<HTMLAnchorElement>('a'));
     const byId = new Map(links.map((a) => [a.getAttribute('href')!.slice(1), a]));
     const observer = new IntersectionObserver(
@@ -62,7 +110,15 @@ const items = headings.filter((h) => h.depth === 2 || h.depth === 3);
         for (const entry of entries) {
           if (entry.isIntersecting) {
             links.forEach((a) => a.classList.remove('active'));
-            byId.get(entry.target.id)?.classList.add('active');
+            const a = byId.get(entry.target.id);
+            if (a) {
+              a.classList.add('active');
+              let li = a.closest('li');
+              while (li) {
+                li.classList.remove('toc-collapsed');
+                li = li.parentElement?.closest('li') ?? null;
+              }
+            }
           }
         }
       },
