@@ -153,7 +153,7 @@ button.ghost:hover{border-color:var(--ink2);color:var(--ink)}
 body.console-collapsed aside.console{display:none}
 @media (max-width:1080px){
   .layout{display:block}
-  aside.console{position:fixed;top:0;left:0;bottom:0;width:min(330px,88vw);max-height:none;border-radius:0;border-top:none;border-bottom:none;border-left:none;transform:translateX(-103%);transition:transform .22s ease;z-index:70;box-shadow:8px 0 30px rgba(0,0,0,.45);overflow-y:auto}
+  aside.console{position:fixed;top:46px;left:0;bottom:0;width:min(330px,88vw);max-height:none;border-radius:0;border-top:none;border-bottom:none;border-left:none;transform:translateX(-103%);transition:transform .22s ease;z-index:70;box-shadow:8px 0 30px rgba(0,0,0,.45);overflow-y:auto}
   body.drawer-open aside.console{transform:none}
   body.drawer-open .drawer-mask{display:block;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60}
   .iconbtn{display:inline-flex;align-items:center;justify-content:center}
@@ -510,7 +510,7 @@ try{
 var __T='light';
 try{__T=localStorage.getItem('theme')||(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}catch(_){}
 document.documentElement.dataset.theme=__T;
-if(location.protocol==='file:'){var __bd=document.getElementById('backDemo');if(__bd)__bd.style.display='none';}
+if(location.protocol==='file:'||window.self!==window.top){var __bd=document.getElementById('backDemo');if(__bd)__bd.style.display='none';}
 /* ───────── 状态与参数 ───────── */
 var COLS=72, ROWS=160, IBLK=52, IWHT=204, RANGE=IWHT-IBLK, DMAG=18;
 var state={theta:5, sigma:1.0, noise:2, seed:7, row:80, sharp:0, probeF:0.15, arrowF:0.15};

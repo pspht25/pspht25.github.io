@@ -449,7 +449,7 @@ for row in result:
 var __T='light';
 try{__T=localStorage.getItem('theme')||(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}catch(_){}
 document.documentElement.dataset.theme=__T;
-if(location.protocol==='file:'){var __bd=document.getElementById('backDemo');if(__bd)__bd.style.display='none';}
+if(location.protocol==='file:'||window.self!==window.top){var __bd=document.getElementById('backDemo');if(__bd)__bd.style.display='none';}
 try{window.addEventListener('storage',function(e){if(e&&e.key==='theme'){document.documentElement.dataset.theme=e.newValue||'light';}})}catch(_){}
 
 /* ---------- 工具 ---------- */
