@@ -1,0 +1,190 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+const posts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
+);
+const notes = (await getCollection('kb', ({ data }) => !data.draft)).sort(
+  (a, b) => a.data.order - b.data.order || a.data.title.localeCompare(b.data.title, 'zh'),
+);
+
+const byYear = new Map<number, typeof posts>();
+for (const p of posts) {
+  const y = p.data.pubDate.getFullYear();
+  if (!byYear.has(y)) byYear.set(y, [] as unknown as typeof posts);
+  (byYear.get(y) as unknown as typeof posts).push(p);
+}
+const years = [...byYear.keys()].sort((a, b) => b - a);
+
+const allTags = [...new Set(posts.flatMap((p) => p.data.tags))].sort(
+  (a, b) => a.localeCompare(b, 'zh'),
+);
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const hay = (title: string, desc: string, tags: string[], body?: string) =>
+  [title, desc, tags.join(' '), (body ?? '').slice(0, 400)]
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+const kbCats = [...new Set(notes.map((n) => n.data.category))];
+---
+
+<BaseLayout title="归档">
+  <h1>归档</h1>
+  <p class="page-desc">
+    共 <strong>{posts.length}</strong> 篇博客 · <strong>{notes.length}</strong> 篇笔记，
+    当前显示 <strong><span id="archive-count">{posts.length + notes.length}</span></strong> 篇。
+  </p>
+
+  <div class="archive-bar">
+    <input
+      id="archive-search"
+      type="search"
+      placeholder="搜索标题、摘要、正文…"
+      autocomplete="off"
+    />
+    {allTags.length > 0 && (
+      <div class="tag-chips" role="group" aria-label="按标签筛选">
+        <button class="tag-chip active" data-tag="">全部</button>
+        {allTags.map((t) => (
+          <button class="tag-chip" data-tag={t}>{t}</button>
+        ))}
+      </div>
+    )}
+  </div>
+
+  {years.map((y) => (
+    <section class="home-section" data-group>
+      <h2>{y}</h2>
+      <ul class="post-list archive-list">
+        {(byYear.get(y) as unknown as typeof posts).map((post) => (
+          <li
+            data-search={hay(post.data.title, post.data.description ?? '', post.data.tags, post.body)}
+            data-tags={post.data.tags.join('|')}
+          >
+            <a href={`/blog/${post.id}/`}>
+              <span class="archive-date">
+                {pad2(post.data.pubDate.getMonth() + 1)}-{pad2(post.data.pubDate.getDate())}
+              </span>
+              <span class="post-title">{post.data.title}</span>
+              {post.data.tags.length > 0 && (
+                <span class="archive-tags">{post.data.tags.map((t) => `#${t}`).join(' ')}</span>
+              )}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  ))}
+
+  {kbCats.map((cat) => (
+    <section class="home-section" data-group>
+      <h2>知识库 · {cat}</h2>
+      <ul class="post-list archive-list">
+        {notes
+          .filter((n) => n.data.category === cat)
+          .map((n) => (
+            <li
+              data-search={hay(n.data.title, n.data.description ?? '', [n.data.category], n.body)}
+              data-tags={n.data.category}
+            >
+              <a href={`/kb/${n.id}/`}>
+                <span class="post-title">{n.data.title}</span>
+                {n.data.description && <span class="post-desc">{n.data.description}</span>}
+              </a>
+            </li>
+          ))}
+      </ul>
+    </section>
+  ))}
+
+  <p id="archive-empty" hidden>没有匹配的内容，换个关键词试试。</p>
+
+  <style>
+    .archive-bar { margin: 1.2rem 0 0.5rem; }
+    #archive-search {
+      width: 100%;
+      padding: 0.55rem 0.9rem;
+      font-size: 0.95rem;
+      font-family: var(--font-sans);
+      color: var(--fg);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      outline: none;
+    }
+    #archive-search:focus { border-color: var(--accent); }
+    .tag-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 0.8rem; }
+    .tag-chip {
+      padding: 0.28rem 0.85rem;
+      font-size: 0.85rem;
+      font-family: var(--font-sans);
+      color: var(--fg-muted);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+    .tag-chip:hover { color: var(--accent); border-color: var(--accent); }
+    .tag-chip.active {
+      color: #fff;
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    .archive-list li a { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+    .archive-date {
+      flex: 0 0 auto;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      color: var(--fg-muted);
+    }
+    .archive-tags {
+      flex: 0 0 auto;
+      font-size: 0.8rem;
+      color: var(--fg-muted);
+    }
+    .archive-list li[hidden] { display: none; }
+    #archive-empty { text-align: center; color: var(--fg-muted); padding: 2rem 0; }
+  </style>
+
+  <script>
+    const input = document.getElementById('archive-search') as HTMLInputElement;
+    const chips = [...document.querySelectorAll<HTMLButtonElement>('.tag-chip')];
+    const items = [...document.querySelectorAll<HTMLElement>('[data-search]')];
+    const groups = [...document.querySelectorAll<HTMLElement>('[data-group]')];
+    const empty = document.getElementById('archive-empty')!;
+    const count = document.getElementById('archive-count')!;
+    let activeTag = '';
+
+    function apply() {
+      const q = (input.value || '').trim().toLowerCase();
+      let visible = 0;
+      for (const li of items) {
+        const okQ = !q || (li.dataset.search || '').includes(q);
+        const okT =
+          !activeTag ||
+          (li.dataset.tags || '').split('|').filter(Boolean).includes(activeTag);
+        const show = okQ && okT;
+        li.hidden = !show;
+        if (show) visible++;
+      }
+      for (const g of groups) {
+        g.hidden = !g.querySelectorAll('[data-search]:not([hidden])').length;
+      }
+      empty.hidden = visible > 0;
+      count.textContent = String(visible);
+    }
+
+    input?.addEventListener('input', apply);
+    for (const chip of chips) {
+      chip.addEventListener('click', () => {
+        activeTag = chip.dataset.tag || '';
+        chips.forEach((c) => c.classList.toggle('active', c === chip));
+        apply();
+      });
+    }
+  </script>
+</BaseLayout>
