@@ -12,26 +12,49 @@ const { demo } = Astro.props;
 ---
 
 <BaseLayout title={demo.title} description={demo.description}>
-  <h1>{demo.emoji} {demo.title}</h1>
-  <p class="page-desc">{demo.description}</p>
-  <div class="demo-toolbar">
-    <a class="demo-btn" href={`/demos/${demo.file}`} target="_blank" rel="noopener">⛶ 全屏打开</a>
-    {demo.zip ? (
-      <a class="demo-btn" href={`/demos/${demo.zip}`} download={demo.zip}>⬇️ 导出下载（zip）</a>
-    ) : (
-      <a class="demo-btn" href={`/demos/${demo.file}`} download={demo.file}>⬇️ 下载单文件</a>
-    )}
-    <span class="demo-note">整站加密保护中：在线查看与下载的文件均需博客密码打开</span>
-  </div>
-  <div class="demo-frame-wrap">
+  <div class="demo-stage" id="demo-stage">
     <iframe
       class="demo-frame"
       src={`/demos/${demo.file}`}
       title={demo.title}
-      loading="lazy"
     ></iframe>
+    <div class="demo-fab-wrap">
+      <button class="demo-fab" id="demo-fab" type="button" aria-label="演示控制">⋯</button>
+      <div class="demo-fab-menu" id="demo-fab-menu" hidden>
+        <a href={`/demos/${demo.file}`} target="_blank" rel="noopener">⛶ 全屏打开</a>
+        {demo.zip ? (
+          <a href={`/demos/${demo.zip}`} download={demo.zip}>⬇️ 导出下载（zip）</a>
+        ) : (
+          <a href={`/demos/${demo.file}`} download={demo.file}>⬇️ 下载单文件</a>
+        )}
+        <a href="/demos/">← 演示集</a>
+        <span class="demo-fab-tip">文件受博客密码保护</span>
+      </div>
+    </div>
   </div>
-  <p class="demo-note" style="margin-top: 10px;">
-    演示完全在浏览器本地运行，不收集任何数据。
-  </p>
 </BaseLayout>
+
+<script>
+  const stage = document.getElementById('demo-stage') as HTMLElement;
+  const fab = document.getElementById('demo-fab') as HTMLElement;
+  const menu = document.getElementById('demo-fab-menu') as HTMLElement;
+
+  // 演示层从站点导航底部一直铺到视口底部
+  function fit() {
+    const header = document.querySelector('.site-header') as HTMLElement | null;
+    const top = header ? header.getBoundingClientRect().bottom : 0;
+    stage.style.top = `${Math.max(top, 0)}px`;
+    stage.style.height = `${Math.max(window.innerHeight - top, 0)}px`;
+  }
+  fit();
+  window.addEventListener('resize', fit);
+
+  fab.addEventListener('click', () => {
+    menu.hidden = !menu.hidden;
+  });
+  document.addEventListener('click', (e) => {
+    if (!menu.hidden && !fab.contains(e.target as Node) && !menu.contains(e.target as Node)) {
+      menu.hidden = true;
+    }
+  });
+</script>
