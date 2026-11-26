@@ -1,4 +1,4 @@
-/* ===== 心屿 · 全局样式 ===== */
+/* ===== 心屿 · 全局样式（主题与 App 对齐：Material 3 seed #8C6E4A 松烟褐） ===== */
 :root {
   color-scheme: light dark;
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
@@ -9,26 +9,26 @@
 }
 
 html[data-theme='light'] {
-  --bg: #f6f8fb;
-  --bg-soft: #eef2f7;
-  --fg: #1f2937;
-  --fg-muted: #64748b;
-  --card: #ffffff;
-  --border: #e3e9f0;
-  --accent: #2563eb;
-  --accent-soft: rgba(37, 99, 235, 0.1);
-  --shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  --bg: #fdf8f3;
+  --bg-soft: #f3ede2;
+  --fg: #201b14;
+  --fg-muted: #5f5647;
+  --card: #fffdf9;
+  --border: #e7ddd0;
+  --accent: #6d5333;
+  --accent-soft: rgba(109, 83, 51, 0.1);
+  --shadow: 0 1px 3px rgba(32, 27, 20, 0.08);
 }
 
 html[data-theme='dark'] {
-  --bg: #0b1220;
-  --bg-soft: #111b2e;
-  --fg: #e2e8f0;
-  --fg-muted: #94a3b8;
-  --card: #16223a;
-  --border: #24304a;
-  --accent: #5ea2ff;
-  --accent-soft: rgba(94, 162, 255, 0.14);
+  --bg: #18120c;
+  --bg-soft: #221a13;
+  --fg: #ece1d4;
+  --fg-muted: #b0a494;
+  --card: #261e15;
+  --border: #3b3227;
+  --accent: #e5c39a;
+  --accent-soft: rgba(229, 195, 154, 0.14);
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 

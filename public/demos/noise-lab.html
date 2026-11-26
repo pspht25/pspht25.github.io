@@ -14,13 +14,13 @@
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
 }
 html[data-theme='light']{
-  --bg:#f6f8fb; --bg-soft:#eef2f7; --fg:#1f2937; --muted:#64748b;
-  --card:#ffffff; --border:#e3e9f0; --accent:#2563eb; --accent-soft:rgba(37,99,235,.1);
+  --bg:#fdf8f3; --bg-soft:#f3ede2; --fg:#201b14; --muted:#5f5647;
+  --card:#fffdf9; --border:#e7ddd0; --accent:#6d5333; --accent-soft:rgba(109,83,51,.1);
   --warn:#dc2626; --ok:#16a34a; --amber:#d97706; --chip:#f1f5f9;
 }
 html[data-theme='dark']{
-  --bg:#0b1220; --bg-soft:#111b2e; --fg:#e2e8f0; --muted:#94a3b8;
-  --card:#16223a; --border:#24304a; --accent:#5ea2ff; --accent-soft:rgba(94,162,255,.14);
+  --bg:#18120c; --bg-soft:#221a13; --fg:#ece1d4; --muted:#b0a494;
+  --card:#261e15; --border:#3b3227; --accent:#e5c39a; --accent-soft:rgba(229,195,154,.14);
   --warn:#f87171; --ok:#4ade80; --amber:#fbbf24; --chip:#1d2a44;
 }
 *{box-sizing:border-box}
@@ -560,7 +560,7 @@ function drawSnrChart(){
   cv.width = w * dpr; cv.height = h * dpr;
   const c = cv.getContext('2d'); c.scale(dpr, dpr);
   const dark = document.documentElement.dataset.theme === 'dark';
-  const axc = dark ? '#94a3b8' : '#64748b', grc = dark ? '#24304a' : '#e3e9f0';
+  const axc = dark ? '#b0a494' : '#5f5647', grc = dark ? '#3b3227' : '#e7ddd0';
   const X = L => 34 + (L / 4) * (w - 50), Y = s => h - 24 - (s / 40) * (h - 40);
   c.strokeStyle = grc; c.lineWidth = 1;
   for (let s = 0; s <= 40; s += 10) { c.beginPath(); c.moveTo(X(0), Y(s)); c.lineTo(X(4), Y(s)); c.stroke();
@@ -573,8 +573,8 @@ function drawSnrChart(){
   c.stroke();
   const S = Math.pow(10, +$('#rPh').value / 100 * 4);
   const L = Math.log10(S), snr = 10 * L;
-  c.fillStyle = '#2563eb'; c.beginPath(); c.arc(X(L), Y(snr), 5, 0, 7); c.fill();
-  c.fillStyle = dark ? '#e2e8f0' : '#1f2937'; c.font = 'bold 12px sans-serif';
+  c.fillStyle = '#6d5333'; c.beginPath(); c.arc(X(L), Y(snr), 5, 0, 7); c.fill();
+  c.fillStyle = dark ? '#ece1d4' : '#201b14'; c.font = 'bold 12px sans-serif';
   c.fillText('当前: ' + Math.round(S) + ' 光子 → ' + snr.toFixed(1) + 'dB', X(L) - 60, Y(snr) - 12);
   $('#roSnr2').textContent = snr.toFixed(1) + ' dB';
   $('#roSnr2').className = 'v ' + judgeSnr(snr)[1];
@@ -809,15 +809,15 @@ function tsLine(cv, main, ideal, opts) {
   scan(main); if (opts.ghost) scan(opts.ghost); if (opts.points) scan(opts.points);
   const pad = Math.max(8, (hi - lo) * .18); lo -= pad; hi += pad;
   const X = i => 10 + (i / (SW - 1)) * (w - 40), Y = v => h - 16 - (v - lo) / (hi - lo) * (h - 34);
-  c.strokeStyle = dark ? '#24304a' : '#e3e9f0'; c.lineWidth = 1;
+  c.strokeStyle = dark ? '#3b3227' : '#e7ddd0'; c.lineWidth = 1;
   c.beginPath(); c.moveTo(10, Y(ideal)); c.lineTo(w - 30, Y(ideal)); c.stroke();
-  c.fillStyle = dark ? '#8b98ab' : '#64748b'; c.font = '10px sans-serif';
+  c.fillStyle = dark ? '#8b98ab' : '#5f5647'; c.font = '10px sans-serif';
   c.fillText('理想值 ' + Math.round(ideal), w - 108, Y(ideal) - 4);
   const draw = (arr, col, lw) => { c.strokeStyle = col; c.lineWidth = lw; c.beginPath();
     arr.forEach((v, i) => { i === 0 ? c.moveTo(X(i), Y(v)) : c.lineTo(X(i), Y(v)); }); c.stroke(); };
   if (opts.ghost) draw(opts.ghost, dark ? 'rgba(148,163,184,.4)' : 'rgba(100,116,139,.35)', 1);
   if (opts.main) draw(opts.main, '#16a34a', 2);
-  if (opts.points) { c.fillStyle = '#2563eb';
+  if (opts.points) { c.fillStyle = '#6d5333';
     opts.points.forEach((v, i) => { c.beginPath(); c.arc(X(i * 4 + 1.5), Y(v), 4, 0, 7); c.fill(); }); }
 }
 function tsRender() {

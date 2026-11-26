@@ -9,8 +9,8 @@
     var cs = getComputedStyle(document.documentElement);
     function c(n, f) { var v = (cs.getPropertyValue(n) || '').trim(); return v || f; }
     return {
-      FG: c('--fg', '#1f2937'), MUT: c('--muted', '#64748b'), BRD: c('--border', '#e3e9f0'),
-      ACC: c('--accent', '#2563eb'), CARD: c('--card', '#fff'), BG: c('--bg-soft', '#eef2f7'),
+      FG: c('--fg', '#201b14'), MUT: c('--muted', '#5f5647'), BRD: c('--border', '#e7ddd0'),
+      ACC: c('--accent', '#6d5333'), CARD: c('--card', '#fff'), BG: c('--bg-soft', '#f3ede2'),
       WARN: c('--warn', '#dc2626'), OK: c('--ok', '#16a34a'), AMB: c('--amber', '#d97706')
     };
   }
@@ -274,7 +274,7 @@
       var g = Math.round(Math.min(Math.max(dn, 0), 255));
       return 'rgb(' + g + ',' + g + ',' + g + ')';
     }
-    function tcol(dn) { return dn > 140 ? P.FG : '#f4f6f8'; }
+    function tcol(dn) { return dn > 140 ? P.FG : '#f7f2ea'; }
     // 顶部说明
     ctx.textAlign = 'left';
     ctx.fillStyle = P.MUT; ctx.font = '10px sans-serif';
@@ -313,7 +313,7 @@
     ctx.fillStyle = gcol(bgDn); ctx.fillRect(xb, y1, bw, bh);
     ctx.strokeStyle = P.MUT; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
     ctx.strokeRect(xb, y1, bw, bh); ctx.setLineDash([]);
-    ctx.fillStyle = bgDn > 140 ? P.FG : '#f4f6f8'; ctx.font = '600 10px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillStyle = bgDn > 140 ? P.FG : '#f7f2ea'; ctx.font = '600 10px sans-serif'; ctx.textAlign = 'center';
     ctx.fillText(String(Math.round(bgDn)), xb + bw / 2, y1 + bh / 2 + 4);
     ctx.fillStyle = P.MUT; ctx.font = '9px sans-serif';
     ctx.fillText('0.62', xb + bw / 2, yD);

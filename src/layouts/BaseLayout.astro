@@ -23,6 +23,30 @@ const { title, description } = Astro.props;
         (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
       document.documentElement.dataset.theme = theme;
     </script>
+    <script is:inline>
+      // App 主题注入协议（心屿 App WebView 集成用，浏览器直接访问无参数时零影响）
+      // 方式一：URL 参数 ?xa-accent=%236d5333&xa-bg=%23fdf8f3&…&xm=dark|light
+      // 方式二：App 侧 evaluateJavascript 直接写 localStorage['appTheme-*'] 后 reload
+      // 清除回退：?xa=reset
+      try {
+        const KEYS = ['accent','bg','bgSoft','fg','fgMuted','card','border'];
+        const VAR = { accent:'--accent', bg:'--bg', bgSoft:'--bg-soft', fg:'--fg', fgMuted:'--fg-muted', card:'--card', border:'--border' };
+        const q = new URLSearchParams(location.search);
+        if (q.get('xa') === 'reset') {
+          KEYS.forEach(k => localStorage.removeItem('appTheme-' + k));
+        } else {
+          KEYS.forEach(k => { const v = q.get('xa-' + k); if (v) localStorage.setItem('appTheme-' + k, v); });
+        }
+        const xm = q.get('xm');
+        if (xm === 'dark' || xm === 'light') localStorage.setItem('theme', xm);
+        const root = document.documentElement;
+        KEYS.forEach(k => {
+          const v = localStorage.getItem('appTheme-' + k);
+          if (v) root.style.setProperty(VAR[k], v);
+        });
+        if (xm === 'dark' || xm === 'light') root.dataset.theme = xm;
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <Header />
