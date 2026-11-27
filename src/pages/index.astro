@@ -58,9 +58,4 @@ const posts = (await getCollection('blog', ({ data }) => !data.draft))
       ))}
     </div>
   </section>
-
-  <section class="home-section">
-    <h2>知识库 <a class="more" href="/kb/">进入 →</a></h2>
-    <p class="page-desc">结构化的笔记与速查手册，按分类组织，慢慢填满这座岛。</p>
-  </section>
 </BaseLayout>

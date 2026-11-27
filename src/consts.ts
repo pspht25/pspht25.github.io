@@ -1,6 +1,6 @@
 export const SITE_TITLE = '心屿';
 export const SITE_TITLE_EN = 'Xīn Yǔ';
-export const SITE_DESCRIPTION = '心屿 —— 一座个人知识岛屿：博客 · 知识库 · 工具箱';
+export const SITE_DESCRIPTION = '心屿 —— 一座个人知识岛屿：博客 · 工具箱 · 演示集';
 export const SITE_URL = 'https://pspht25.github.io';
 
 // giscus 评论配置。启用步骤：

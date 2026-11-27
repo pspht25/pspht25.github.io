@@ -5,9 +5,6 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 const posts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
   (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
 );
-const notes = (await getCollection('kb', ({ data }) => !data.draft)).sort(
-  (a, b) => a.data.order - b.data.order || a.data.title.localeCompare(b.data.title, 'zh'),
-);
 
 const byYear = new Map<number, typeof posts>();
 for (const p of posts) {
@@ -28,14 +25,13 @@ const hay = (title: string, desc: string, tags: string[], body?: string) =>
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
-const kbCats = [...new Set(notes.map((n) => n.data.category))];
 ---
 
 <BaseLayout title="归档">
   <h1>归档</h1>
   <p class="page-desc">
-    共 <strong>{posts.length}</strong> 篇博客 · <strong>{notes.length}</strong> 篇笔记，
-    当前显示 <strong><span id="archive-count">{posts.length + notes.length}</span></strong> 篇。
+    共 <strong>{posts.length}</strong> 篇文章，
+    当前显示 <strong><span id="archive-count">{posts.length}</span></strong> 篇。
   </p>
 
   <div class="archive-bar">
@@ -75,27 +71,6 @@ const kbCats = [...new Set(notes.map((n) => n.data.category))];
             </a>
           </li>
         ))}
-      </ul>
-    </section>
-  ))}
-
-  {kbCats.map((cat) => (
-    <section class="home-section" data-group>
-      <h2>知识库 · {cat}</h2>
-      <ul class="post-list archive-list">
-        {notes
-          .filter((n) => n.data.category === cat)
-          .map((n) => (
-            <li
-              data-search={hay(n.data.title, n.data.description ?? '', [n.data.category], n.body)}
-              data-tags={n.data.category}
-            >
-              <a href={`/kb/${n.id}/`}>
-                <span class="post-title">{n.data.title}</span>
-                {n.data.description && <span class="post-desc">{n.data.description}</span>}
-              </a>
-            </li>
-          ))}
       </ul>
     </section>
   ))}
